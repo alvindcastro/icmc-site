@@ -1,0 +1,13 @@
+import type {PackageContents, SellingUnit} from '../api/types';
+import type {BaseUnit, PhysicalUnit} from '../inventory/types';
+export type RecipeYield = {quantity: 1; selling_unit: SellingUnit; package_contents: PackageContents | null};
+export type RecipeItemInput = {ingredient_id: string; quantity: string; unit: PhysicalUnit};
+export type RecipeItem = RecipeItemInput & {ingredient_name: string; base_unit: BaseUnit};
+export type RecipeInput = {expected_version: number | null; yield: RecipeYield; items: RecipeItemInput[]};
+export type Recipe = {id: string; version: number; variant_id: string; yield: RecipeYield; items: RecipeItem[]; recorded_at: string; updated_at: string};
+export type EstimateBasis = {ingredient_id: string; ingredient_name: string; base_unit: BaseUnit; base_quantity: string;
+  purchase_id: string | null; purchase_line_id: string | null; purchased_on: string | null; unit_cost: string | null; estimated_cost: string | null};
+export type EstimateMissing = {code: 'recipe_missing' | 'price_missing'; ingredient_id: string | null; variant_id: string};
+export type Estimate = {variant_id: string; recipe_version: number | null; currency: string; selling_price_minor: number;
+  ingredient_cost_minor: number | null; ingredient_contribution_minor: number | null; complete: boolean;
+  missing: EstimateMissing[]; basis: EstimateBasis[]; calculated_at: string};

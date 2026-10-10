@@ -1,0 +1,27 @@
+import type {PermittedAction} from '../api/types';
+export type BaseUnit = 'g' | 'ml' | 'piece';
+export type PhysicalUnit = BaseUnit | 'kg' | 'l';
+export type PurchaseUnit = PhysicalUnit | 'bag' | 'bottle' | 'box';
+export type Ingredient = {
+  id: string; version: number; name: string; base_unit: BaseUnit; low_stock_threshold: string | null;
+  stock_on_hand: string; low_stock: boolean; latest_unit_cost: string | null; latest_purchase_date: string | null;
+  permitted_actions: Record<'edit' | 'opening' | 'waste' | 'correction', PermittedAction>;
+};
+export type PurchaseLine = {client_line_id: string; ingredient_id: string; quantity: string; unit: PurchaseUnit;
+  pack_contents: {quantity: string; unit: PhysicalUnit} | null; total_cost_minor: number};
+export type PurchaseDraft = {purchased_on: string; supplier: string; note: string; items: PurchaseLine[]};
+export type PreviewLine = {client_line_id: string; ingredient_id: string; base_quantity: string; base_unit: BaseUnit;
+  total_cost_minor: number; unit_cost: string; ingredient_version: number; before_quantity: string; after_quantity: string};
+export type PurchasePreview = {id: string; expires_at: string; currency: string; minor_digits: number; total_cost_minor: number; items: PreviewLine[]};
+export type ReceiptLine = Omit<PurchaseLine, 'client_line_id'> & {id: string; ingredient_name: string; base_unit: BaseUnit; base_quantity: string; unit_cost: string; stock_movement_id: string};
+export type Purchase = {id: string; reference: string; purchased_on: string; supplier: string; note: string; currency: string; minor_digits: number;
+  total_cost_minor: number; items: ReceiptLine[]; operation_id: string; recorded_at: string; recorded_by: string};
+export type PurchaseSummary = Pick<Purchase, 'id' | 'reference' | 'purchased_on' | 'supplier' | 'currency' | 'minor_digits' | 'total_cost_minor' | 'recorded_at'>;
+export type Price = ReceiptLine & {purchase_id: string; reference: string; supplier: string; purchased_on: string; recorded_at: string; currency: string; minor_digits: number};
+export type MovementInput = {expected_version: number; type: 'opening' | 'waste' | 'correction'; delta_base_quantity: string; reason: string;
+  preparation_id: string | null; corrects_movement_id: string | null};
+export type MovementPreview = {id: string; expires_at: string; ingredient_id: string; expected_version: number; before_quantity: string; delta_base_quantity: string; after_quantity: string};
+export type Movement = {id: string; ingredient_id: string; delta_base_quantity: string; before_quantity: string; after_quantity: string;
+  type: MovementInput['type'] | 'purchase' | 'consumption'; reason: string; purchase_id: string | null; preparation_id: string | null;
+  corrects_movement_id: string | null; operation_id: string; recorded_at: string; recorded_by: string};
+export type InventoryResult = Ingredient | {ingredient: Ingredient; movement: Movement} | {purchase: Purchase; ingredients: Ingredient[]};

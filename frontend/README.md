@@ -1,0 +1,72 @@
+# Food Reservations Frontend
+
+Phases 1-6 provide React/TypeScript routing, a responsive staff workspace, admin/token sign-in/session handling, business formatting, maintainable foods/variants, reservations, a business-date dashboard, fulfillment, deposits/refunds, printable order summaries, ingredients/stock movements, purchases, comparable price history, and per-variant recipes with backend-calculated ingredient estimates. Orders and inventory support filters, URL pagination and scroll return, authoritative review, retained failures/conflicts and uncertain-save reconciliation. A page that fails to render is contained in the workspace content area with a Try again action; navigation stays usable. Planning and preparation recording remain a later phase without actions/navigation. The workspace is verified with fixtures, not ready for real data until the live gates close.
+
+## Requirements and Setup
+
+Use Node.js 22.12 or newer and npm. The lockfile pins the tested dependencies.
+
+```powershell
+npm ci
+```
+
+If npm reports that the esbuild install script needs approval, review it with `npm approve-scripts esbuild`. Vite needs to launch its build worker; a restricted execution environment may require permission to run that process.
+
+## Explicit Development Fixtures
+
+```powershell
+npm run dev:fixtures
+```
+
+Open the URL Vite prints, normally `http://127.0.0.1:5173`. If that port is occupied Vite chooses another one. Temporary fixture username: `admin`; fixture token: `local-admin-token`. The form prefills `admin` and masks the token until revealed. These are synthetic development credentials, never a live backend secret. Sessions live only in memory and a page reload signs out. The fixture label and provisional currency/timezone remain visible.
+
+The fixture transport supports auth/session/settings, menu categories/foods/variants, order queries/details/quotes/create/edit, sequential fulfillment/cancellation, payment/refund entries, the dashboard, ingredients/stock movements, normalized purchases/receipts/price history, recipes/estimates and shared operation reconciliation. Example foods/prices are provisional, including a synthetic development-only stick example; unconfirmed Pork BBQ options are omitted. Menu, orders, inventory, ledger entries, previews, operations and sessions are in memory and reset on reload. Orders start empty. The fixture preview opens with lorem ipsum placeholders standing in for recipes the business has not supplied: ingredients Lorem, Ipsum, Dolor and Amet, one receipt from "Lorem ipsum supplier" (DEV-P0001) that prices them, and a one-unit recipe with a complete estimate for each of the six provisional variants. They are not real recipes; every recipe page in fixture mode is labelled as sample development data, and placeholders can be edited or replaced like any other entry. Automated tests use the same fixture transport without placeholders unless a test asks for them. No live menu, inventory or recipe seed is supplied. Planning/preparation-recording workflows still fail explicitly. Production builds exclude fixture accounts/data and fixture-only Temporal/decimal.js calculations. Requests have no implicit fallback from live mode to fixtures.
+
+## Live Backend Configuration
+
+Default `npm run dev` uses live requests to `/api/v1` and proxies `/api` to `http://127.0.0.1:8000`. Optional `.env.local` settings:
+
+```dotenv
+VITE_API_MODE=live
+VITE_API_BASE_URL=/api/v1
+API_PROXY_TARGET=http://127.0.0.1:8000
+```
+
+Restart Vite after changing environment settings. Do not put secrets into `VITE_` variables; they are browser-visible. The backend must implement [auth/session/settings](docs/phase-0/API_CONTRACT.md#auth-and-settings-phase-1), [menu](docs/phase-0/API_CONTRACT.md#menu-phase-2), [order/quote](docs/phase-0/API_CONTRACT.md#orders-and-quotes-phase-3), [status/payment](docs/phase-0/API_CONTRACT.md#status-and-payments-phase-4), [inventory/purchase](docs/phase-0/API_CONTRACT.md#inventory-and-purchases-phase-5), and [recipe/estimate contracts](docs/phase-0/API_CONTRACT.md#recipes-and-cost-estimates-phase-6), including cookie sessions, CSRF, permitted actions, versions, durable operation keys/lookups, atomic stock changes, append-only ledgers and immutable snapshots. Workflow access requires its capability; purchases require both inventory and purchases; recipes require menu, recipes and inventory. Live inventory and recipes require confirmed currency/timezone; live reservations also require the other business settings and confirmed selling data. A same-origin deployment must route `/api` to FastAPI and serve `index.html` for application routes including `/account`, `/menu`, `/menu/:foodId/variants/:variantId/recipe`, `/orders/:id`, `/orders/:id/print`, `/dashboard`, `/ingredients/:id`, and `/purchases/:id`, plus their lists.
+
+The temporary sign-in request is `{ username: "admin", token: "<provided token>" }`. A live backend must validate its own configured token and issue the existing cookie session. The fixture token is accepted only by the explicit development transport and is excluded from production JavaScript.
+
+Session polling is read-only and does not extend idle expiry. The frontend rechecks on focus and at the backend-declared deadline, clears protected state when the session ends, and never automatically queues/replays mutations. Session, quote and preview deadlines are compared on the server clock taken from each response's `Date` header, so a wrong device clock does not end them early; without that header the device clock is used. Uncertain remote sign-out blocks reentry until explicitly confirmed. Session storage retains only a pending-sign-out flag and unresolved menu/order/inventory operation UUIDs; no tokens, customer information, supplier notes or drafts are stored.
+
+Menu saves keep input after rejection. A stale version shows the latest saved values and requires explicit draft resolution. An uncertain save blocks another attempt until a read-only status check resolves it. A 404 can enable an explicit retry of the exact original body/key only while that request survives in memory. Closing an editor with an unresolved save asks for confirmation; the editable draft is then discarded, but the exact request is kept in memory (never in browser storage) so the page banner can still check it and, after a 404, retry it. The same applies to order, transaction and inventory saves. After reload/expiry, the UUID survives but the request does not: unresolved/unknown operations require backend/operator reconciliation before new saves. Development fixture storage is not durable, so a reload can intentionally leave an unresolvable operation until the development tab session ends; live storage must implement durable lookup.
+
+Order entry uses configured business dates/times, not browser-local conversion. Ambiguous DST times require an explicit occurrence; nonexistent times are rejected. Quotes supply line totals, delivery, tax, total, balance, and credit. Changes, errors, and expiry invalidate the current review. Existing lines retain their saved names/units/prices even if the menu changes. A saved delivery order opened after delivery has been disabled shows a notice, offers only enabled methods and cannot be reviewed until another method is chosen. A separate review confirms a pending order. Backend-requested customer credit requires acknowledgment, followed by a separate refund where appropriate. Dirty orders/transactions are guarded against dismissal, reload, and history navigation. Operation lookup backs off for at most 30 seconds while processing, then requires another explicit check; it never automatically repeats a mutation.
+
+Order details offer only the next fulfillment step and permitted cancellation/financial actions, with visible unavailable reasons. Ready/completion use staff attestation while preparation recording is disabled; unpaid completion is allowed. Payments cannot exceed the current due amount. Refunds require an original payment, a reason, and an amount within its backend-provided remaining refundable cap and net paid funds. Cancellation preserves original totals/history, makes retained funds credit due, and never restores stock. Financial review precedes submission; ledger entries are not editable/deletable. Current-order reads refresh balances after verified success. The print view loads the saved snapshot, includes balance/credit, preserves list-return filters, and hides navigation/actions when printed.
+
+Ingredients use grams, milliliters or whole pieces and optional thresholds. Stock history links to immutable receipts and earlier corrected movements. Reasoned opening/waste/correction entry reviews backend-provided before/change/after stock; no negative stock is allowed. A saved ingredient's stock is verified numerically, so `0` and `0.000` are the same quantity. Purchases use exact quantities and total ingredient cost, with explicit bag/bottle/box contents. Review shows original declarations, normalized quantities, comparable costs and stock effects. Two kg costing $24 adds 2000 g and displays $12/kg; unknown prices remain distinct from known zero. Backdated receipts and physical corrections do not overwrite the appropriate latest purchase basis. Low-stock dashboard warnings show current physical inventory independently of the order date, not planned demand. Dirty inventory entry is protected against dismissal/reload/history navigation, and unresolved inventory saves follow the same UUID reconciliation rules.
+
+Menu & Recipes links every variant to its recipe page and marks a variant without one. A recipe states quantities for exactly one selling unit of that variant (one tray, piece, stick or package); each size has its own recipe and nothing is scaled between sizes. Ingredients are chosen from inventory, appear once, and use grams/kilograms, millilitres/litres or whole pieces to match their base unit. The estimate is the backend's calculation: selling price, estimated ingredient cost and ingredient contribution estimate are shown separately, with each ingredient's latest purchase date, receipt link, comparable unit cost and exact row amount. With the $12/kg example, 750 g contributes $9. A missing recipe or purchase price makes the estimate Incomplete with links to the affected records; unknown cost is never shown as zero, while a known zero cost is. The contribution is labelled an ingredient estimate, not net profit. Estimates are read again after a recipe save and on each visit, so recipe, selling-price and purchase changes appear. A recipe written for an earlier selling format is flagged until it is saved for the current one. Recipe saves are version-guarded without operation UUIDs: a conflict shows the latest recipe for explicit review, and an unconfirmed save is resolved by rereading the saved recipe, never by resubmitting blindly. The menu list shows recipe presence only; estimate completeness is on the recipe page.
+
+## Verification
+
+```powershell
+npm test
+npm run typecheck
+npm run build
+npm exec -- playwright install chromium
+npm run test:e2e
+```
+
+`npm run test:watch` runs the behavioral tests interactively. Playwright starts/stops its own live-mode Vite server on port 4173; that port must be free. It intercepts API requests with deterministic development responses. Screenshots, a print PDF and failure traces are generated in ignored `test-results/`. The 48 browser checks cover the foundation, menu, reservations, snapshots, dashboard, filters/scroll return, fulfillment, financial review/credit/refunds, ingredients/purchases/stock links, recipes/estimates, expiry/recovery, protected printing, focus/discard/history protection, 320/375/768/1280-pixel layouts, long text and 200% text zoom. The full Vitest suite contains 306 passing tests across 27 files.
+
+Build output is `dist/`. `npm run preview` serves the built application but does not supply a backend; use a same-origin API reverse proxy for live integration. The [Phase 1](docs/phase-1/VERIFICATION.md), [Phase 2](docs/phase-2/VERIFICATION.md), [Phase 3](docs/phase-3/VERIFICATION.md), [Phase 4](docs/phase-4/VERIFICATION.md), [Phase 5](docs/phase-5/VERIFICATION.md), and [Phase 6](docs/phase-6/VERIFICATION.md) records contain observed red/green results and outstanding live checks; Phases 1-5 each have a section for the 2026-10-10 review fixes summarised in [the implementation plan](FRONTEND_IMPLEMENTATION_PLAN.md#post-delivery-review-fixes).
+
+## WebStorm
+
+1. Open this frontend directory and choose the installed Node.js interpreter under Settings > Languages & Frameworks > JavaScript Runtime.
+2. Open `package.json`, run `npm ci`, then use the run icon beside `dev:fixtures` for the local fixture workspace or `dev` for FastAPI integration.
+3. Create npm run configurations for `test`, `typecheck`, `build`, and `test:e2e`. Use the project directory as the working directory. Install Chromium once before browser tests.
+4. Set JavaScript/TypeScript breakpoints and attach a JavaScript Debug configuration to the local Vite URL. PyCharm can run the separately implemented FastAPI backend on port 8000.
+
+Business/staff/menu confirmations and backend agreement remain tracked in [the implementation plan](FRONTEND_IMPLEMENTATION_PLAN.md). Development tests do not prove live authentication or authorize real business data.
