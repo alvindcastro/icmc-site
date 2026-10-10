@@ -4,7 +4,7 @@ Status: Phases 1-5 frontend implemented and verified against explicit developmen
 
 Source: [Food reservation MVP checklist](../food_reservation_mvp_checklist.md), especially sections 6.1-6.12.
 
-This plan breaks the original three product phases into eight frontend work phases. The workspace now contains the foundation, menu management, reservations, dashboard, fulfillment, payment/refund ledger, printable order summaries, ingredients/stock movements, normalized purchases, comparable price history, and per-variant recipes with backend-calculated ingredient estimates, with explicit fixture and live API modes. It targets the Python/FastAPI backend described in the source checklist; that backend is not implemented in this workspace.
+This plan breaks the original three product phases into eight frontend work phases. The workspace now contains the foundation, menu management, reservations, dashboard, fulfillment, payment/refund ledger, printable order summaries, ingredients/stock movements, normalized purchases, comparable price history, and per-variant recipes with backend-calculated ingredient estimates, with explicit fixture and live API modes. It targets the Python/FastAPI backend described in the source checklist. A scaffold of that backend exists in `backend/` since 2026-10-10, but it implements no contract endpoint yet; see the [backend plan](../backend/BACKEND_IMPLEMENTATION_PLAN.md).
 
 ## Delivery Order
 

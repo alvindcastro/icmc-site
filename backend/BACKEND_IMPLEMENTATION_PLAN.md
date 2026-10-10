@@ -1,6 +1,6 @@
 # Backend Implementation Plan
 
-Status: Draft written 2026-10-10. Nothing in this plan is implemented and every task is unchecked. The frontend for Phases 1-6 exists and is verified only against development fixtures; this backend is what turns those fixtures into a real system.
+Status: Draft written 2026-10-10. Phase B0's scaffold was delivered the same day ([verification record](docs/phase-0/VERIFICATION.md)); no contract endpoint is implemented and Phases B1-B8 are untouched. The frontend for Phases 1-6 exists and is verified only against development fixtures; this backend is what turns those fixtures into a real system. Scope decided 2026-10-10: this is a local project for now.
 
 Sources: [MVP checklist](../food_reservation_mvp_checklist.md), [API contract proposal](../frontend/docs/phase-0/API_CONTRACT.md), [decision register](../frontend/docs/phase-0/DECISIONS.md), [acceptance scenarios](../frontend/docs/phase-0/ACCEPTANCE.md), and the [frontend plan](../frontend/FRONTEND_IMPLEMENTATION_PLAN.md) with its open live completion gates.
 
@@ -16,6 +16,17 @@ The frontend deliberately computes nothing that matters. It sends drafts and sho
 
 A request that reaches the server must either take full effect once or take no effect at all, and the browser must be able to find out which.
 
+## Local-Only Scope
+
+Decided by the project owner on 2026-10-10: for now this is just a local project. That means:
+
+- It runs on the developer's own machine. FastAPI listens on `127.0.0.1:8000`, the frontend runs in live mode through its development proxy, and the database is one SQLite file.
+- There is no hosting, no public access and no real customer, payment or stock data. Settings stay in the `development` environment and stay provisional; development seeds and placeholders are acceptable.
+- Phases B0-B7 are unaffected. The contract behaviours are the same on one machine, and the technical part of each frontend live gate can be verified against the local server.
+- Everything that exists only for hosting or real business use is deferred, not dropped: HTTPS and a reverse proxy, off-machine backups with a restore test, the security review, live data provisioning, business confirmations B01-B10 and the staff walkthrough. Phase B8 separates what applies now from what waits.
+
+Revisit this section before anyone outside the developer uses the system or any real order is entered.
+
 ## How This Plan Closes the Frontend Gates
 
 Each backend phase is finished when the matching frontend live completion gate can be ticked against it.
@@ -30,7 +41,7 @@ Each backend phase is finished when the matching frontend live completion gate c
 | B5. Ingredients and purchases | Stock movements, normalized purchases, price history | Phase 5 | A02, A19 |
 | B6. Recipes and estimates | Per-variant recipes and ingredient cost estimates | Phase 6 | A02, A20 |
 | B7. Planning and preparation | Demand, shortages, preparation recording | Phase 7 (frontend not built yet) | A11-A14, A19, A20 |
-| B8. Release readiness | Deployment, backup and restore, provisioning, walkthroughs | Review-fix gate and real-use checks | A16 with the frontend |
+| B8. Running locally, later release | Local running and conformance now; deployment, backup and restore, provisioning and walkthroughs deferred | Technical part of each gate now; real-use checks later | A16 with the frontend |
 
 ## Proposed Shape
 
@@ -43,14 +54,14 @@ This is the starting proposal, chosen to be the simplest thing that satisfies th
 - **Sessions on the server.** An opaque cookie points at a session row, so sign-out and expiry are real. Signed self-contained cookies are not enough because they cannot be revoked.
 - **Operation keys in the same transaction.** The operation record, the business effects and the stored response commit together. A crash leaves nothing behind, and the browser's "check status" gets a truthful answer.
 - **An operator, not an admin screen.** Provisioning the sign-in token, confirming settings and menu items, enabling capabilities, closing an orphaned operation key, and backup and restore are command-line tasks for whoever runs the server. The contract has no endpoints for them.
-- **Same origin.** A reverse proxy serves the built frontend and forwards `/api` to FastAPI, so cookies and CSRF work without cross-origin exceptions.
+- **Same origin.** Locally, the frontend's development proxy forwards `/api` to FastAPI, so cookies and CSRF work without cross-origin exceptions. A reverse proxy takes over that job only if the project is hosted later.
 
 ### Decisions to Confirm
 
 Tick each when decided. The recommendation is the default if nobody objects.
 
 - [ ] D01 Database. Recommended: SQLite in WAL mode with foreign keys on, as the checklist says. Revisit PostgreSQL only if hosting or concurrent use requires it.
-- [ ] D02 Where the pilot runs: an always-on machine at the business, or a small cloud server. This decides HTTPS, backups and who the operator is. Needs the owner's answer.
+- [x] D02 Where it runs. Decided 2026-10-10: the developer's own machine only, for now. The developer is the operator. Hosting, HTTPS and off-machine backups are deferred; see Local-Only Scope.
 - [ ] D03 Process model. Recommended: one application process behind the proxy while on SQLite.
 - [ ] D04 Persistence layer. Recommended: SQLAlchemy 2 with Alembic migrations.
 - [ ] D05 Number storage. Recommended: integer minor units for money, integer thousandths for ingredient quantities, decimal arithmetic for costs.
@@ -58,10 +69,10 @@ Tick each when decided. The recommendation is the default if nobody objects.
 - [ ] D07 Session storage. Recommended: a sessions table keyed by a hash of the cookie value.
 - [ ] D08 Interim sign-in secret. Recommended: the operator sets the `admin` token by command; only a salted hash is stored; rotation is another command.
 - [ ] D09 Identifiers. Recommended: random opaque IDs with a short type prefix, plus a separate human-readable order reference and purchase reference sequence.
-- [ ] D10 Tooling. Recommended: Python 3.12 or newer, a lockfile, ruff, a type checker and pytest.
+- [x] D10 Tooling. Decided 2026-10-10 by building the scaffold: Python 3.12, uv with a cross-platform `uv.lock`, ruff, mypy in strict mode and pytest.
 - [ ] D11 Contract refinements. Accept the frontend's Phase 2-6 refinements and the 2026-10-10 additions as written, or list the changes. This closes the two open agreement tasks in the frontend plan.
 - [ ] D12 Estimate status in the menu list. Either add a backend-derived estimate status per variant to the food list, or keep it on the recipe page only. Open question from frontend Phase 6.
-- [ ] D13 Repository layout. Recommended: this `backend/` directory beside `frontend/` in the same repository, with its own README and CI job.
+- [x] D13 Repository layout. Decided 2026-10-10: this `backend/` directory beside `frontend/` in the same repository, with its own README and CI job.
 
 ## Rules for Every Phase
 
@@ -82,14 +93,14 @@ Purpose: Agree what is being built and create a project that can be run, tested 
 
 - [ ] Review each [contract section](../frontend/docs/phase-0/API_CONTRACT.md) with the frontend maintainer and record accepted or changed items in the decision register. Tick the contract's Backend Agreement Checklist as each group is accepted.
 - [ ] Resolve decisions D01-D13 above.
-- [ ] Scaffold the package: application factory, one router per area, services holding the business rules, persistence, request and response schemas, and settings read from the environment.
-- [ ] Add dependency lockfile, linting, type checking and pytest, runnable with one command each.
-- [ ] Add a CI workflow that runs the backend checks on every push. Consider adding the frontend type check and unit tests to the same workflow; neither has CI today.
-- [ ] Add an unauthenticated health endpoint outside `/api/v1` for the proxy, exposing no data.
-- [ ] Write `backend/README.md`: setup, running in PyCharm, migrations, tests, environment variables, and how to run with the frontend.
-- [ ] Confirm the frontend's development proxy reaches the server: `npm run dev` in live mode forwards `/api` to `127.0.0.1:8000`.
+- [x] Scaffold the package: application factory, one router per area, services holding the business rules, persistence, request and response schemas, and settings read from the environment. The factory, settings and the `/api/v1` mount point exist; each area's router, services, persistence and schemas are added by the phase that needs them.
+- [x] Add dependency lockfile, linting, type checking and pytest, runnable with one command each.
+- [x] Add a CI workflow that runs the backend checks on every push. Consider adding the frontend type check and unit tests to the same workflow; neither has CI today. Both jobs are in `.github/workflows/ci.yml`; its first run happens on the next push.
+- [x] Add an unauthenticated health endpoint outside `/api/v1` for the proxy, exposing no data. It is `GET /healthz`.
+- [x] Write `backend/README.md`: setup, running in PyCharm, migrations, tests, environment variables, and how to run with the frontend. Migrations are described when the database arrives in Phase B1.
+- [x] Confirm the frontend's development proxy reaches the server: `npm run dev` in live mode forwards `/api` to `127.0.0.1:8000`.
 
-Ready to proceed: A blank application starts, tests run, and the first contract group is agreed.
+Ready to proceed: A blank application starts, tests run, and the first contract group is agreed. The first two are true as of 2026-10-10; agreement is still open.
 
 ## Phase B1: Foundation, Sessions and Settings
 
@@ -112,7 +123,7 @@ Purpose: Everything later phases stand on, plus a real sign-in. Contract: [share
 - [ ] `GET /auth/csrf` works while signed out and returns a token bound to the pre-auth or current session, with no protected data.
 - [ ] `POST /auth/sign-in` accepts `{username, token}` exactly as entered, verifies in constant time against the stored hash, and answers a wrong pair with a generic 401 `invalid_credentials`. Blank values are 422 at `/username` or `/token`.
 - [ ] A successful sign-in rotates the session cookie and the CSRF token and returns `{user, csrf_token, idle_expires_at, absolute_expires_at}`.
-- [ ] Set the cookie as an opaque ID with `HttpOnly`, `Secure`, `SameSite=Lax` and `Path=/`. A plain-HTTP cookie is allowed only by an explicit development setting.
+- [ ] Set the cookie as an opaque ID with `HttpOnly`, `Secure`, `SameSite=Lax` and `Path=/`. A plain-HTTP cookie is allowed only by an explicit development setting, which is the normal setting while the project is local.
 - [ ] `GET /auth/session` returns the session or 401, distinguishes `session_expired` from `unauthenticated`, and does not extend idle expiry.
 - [ ] Extend idle expiry on successful authenticated business requests, never past the absolute limit. Limits are 30 idle minutes and 12 absolute hours, configurable.
 - [ ] `POST /auth/sign-out` requires the CSRF token, ends the server session, clears the cookie and returns 204. An already-ended session also returns 204, so the frontend's "retry sign-out" can always finish.
@@ -165,6 +176,7 @@ Purpose: The two safety mechanisms every later mutation uses, proven on the menu
 - [ ] Add an audited operator command to confirm a food or variant. A later change to its name, unit, package contents or price resets it to provisional.
 - [ ] Return `permitted_actions` for foods (`edit`, `add_variant`) and variants (`edit`). Keep `recipe_id` null until Phase B6.
 - [ ] Add a development seed with the provisional transcription rows from the decision register. Do not invent the Pork BBQ options, and do not seed live data.
+- [ ] Add a local setup command that creates the database, sets a local `admin` token, loads provisional development settings, and seeds the provisional menu, so the project runs locally after one command.
 
 Completion check: Create and edit a food with several variants from two browsers, force a version conflict, lose a response and recover it by status check. Tick the frontend Phase 2 live items.
 
@@ -271,24 +283,34 @@ Purpose: Say what to cook and what to buy, and record cooking exactly once. The 
 
 Completion check: The checklist's acceptance walkthrough passes end to end, including partial preparation, a repeated preparation request deducting stock once, and cancellation that removes demand without returning stock.
 
-## Phase B8: Release Readiness
+## Phase B8: Running Locally, and Later Release Readiness
 
-Purpose: Everything that must be true before real customer and payment data is entered.
+Purpose: Make the local project easy to run and check now, and keep a clear list of what must be true before it is hosted or holds real data.
+
+### Applies now, while the project is local
+
+- [ ] Document and script running both sides on one machine: the server on `127.0.0.1:8000` and the frontend in live mode through its development proxy.
+- [ ] Keep configuration and the local token in an environment file that is excluded from the repository.
+- [ ] Publish the OpenAPI schema and compare its fields, enums and error codes with the contract.
+- [ ] Build a conformance run: execute the behaviors in the frontend's fixture contract tests against the real server through a live transport, and record every difference. The fixtures are the frontend's working definition of this API.
+- [ ] Walk through every open live completion gate in the frontend plan against the local server and tick the technical items with evidence. Leave the items that need business confirmations, real data or staff unticked.
+- [ ] Write the local runbook: start and stop, migrate, reset the database, set the token, confirm settings and menu items, enable a capability, and close an orphaned operation key.
+- [ ] Note in the runbook that copying the database file is enough of a backup while it holds no real data.
+
+### Deferred until the project is hosted or holds real data
 
 - [ ] Deploy behind a reverse proxy on one origin: it serves the built frontend, answers the application routes listed in the frontend README with `index.html`, and forwards `/api` to the server. Use HTTPS and secure cookies.
-- [ ] Keep configuration and secrets in the environment or a secret store, never in the repository.
-- [ ] Schedule database backups that include the operations table, keep a copy off the machine, and document the restore. Perform one real restore and record it; the frontend Phase 4 gate requires this.
+- [ ] Move configuration and secrets to the host's environment or a secret store.
+- [ ] Schedule database backups that include the operations table, keep a copy off the machine, and document the restore. Perform one real restore and record it; the frontend Phase 4 gate requires this before real payments.
 - [ ] Write structured logs with request IDs and without tokens, customer notes or financial drafts. Decide how errors reach the operator.
 - [ ] Keep the server clock synchronized. The frontend follows the server's `Date` header for session, quote and preview deadlines.
 - [ ] Review security before real use: cookie flags, CSRF and Origin on every mutation, authorization on every route including operation lookups and replays, rate limits, request size limits and dependency advisories.
-- [ ] Publish the OpenAPI schema and compare its fields, enums and error codes with the contract.
-- [ ] Build a conformance run: execute the behaviors in the frontend's fixture contract tests against the real server through a live transport, and record every difference. The fixtures are the frontend's working definition of this API.
 - [ ] Provision live data only after confirmations B01-B10: settings, the staff token, confirmed menu items, opening stock and actual recipes. Never load development fixtures or the lorem ipsum placeholders into a live system.
-- [ ] Walk through every open live completion gate in the frontend plan, including the review-fix gate, and tick each with evidence.
+- [ ] Tick the remaining real-use items in the frontend plan's live gates, including the review-fix gate.
 - [ ] Hold a staff walkthrough on desktop and phone, including printing an order.
-- [ ] Write the operator runbook: start and stop, migrate, back up and restore, rotate the token, confirm settings and menu items, enable a capability, and close an orphaned operation key.
+- [ ] Extend the runbook for a hosted system: deploy, back up and restore, rotate the token on the host.
 
-Release check: A stranger with the runbook can restore last night's backup onto a clean machine and staff can carry on.
+Local check: A fresh clone runs both sides with the documented commands and the conformance run passes. Release check, later: a stranger with the runbook can restore last night's backup onto a clean machine and staff can carry on.
 
 ## Response Details the Frontend Verifies
 

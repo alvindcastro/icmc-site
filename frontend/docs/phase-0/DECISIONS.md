@@ -122,7 +122,9 @@ Completion does not require full payment; preparation and payment status remain 
 | Phases 5-6 inventory/costs | Units/purchases/recipes proposals | Actual stock/recipes, backend conversion/cost/purchase agreement |
 | Phase 7 kitchen | Planning/preparation/correction proposals | Baseline reconciliation, backend demand/stock/exactly-once verification |
 
-Backend contract agreement: pending. No backend project, implemented endpoints, or backend maintainer acceptance is present in this workspace. Review the two endpoint groups in the API contract before their respective feature implementation and record any agreed changes here. No mock response can close that integration gate.
+Backend contract agreement: pending. A backend scaffold exists in `backend/` since 2026-10-10, but no contract endpoint is implemented and no backend maintainer acceptance is recorded. Review the two endpoint groups in the API contract before their respective feature implementation and record any agreed changes here. No mock response can close that integration gate.
+
+Scope decision, 2026-10-10 (project owner): for now this is a local project. It runs on the developer's machine with no hosting, no public access and no real business data. The technical part of each live gate may be verified against a local backend; business confirmations B01-B10, hosting, backup and restore, and staff acceptance stay open. The [backend plan](../../../backend/BACKEND_IMPLEMENTATION_PLAN.md) records what is deferred.
 
 ## Completion Record
 
