@@ -103,6 +103,12 @@ One rule is implemented but not exercised: a variant ordered in two selling form
 
 Fixtures are memory-only. They do not establish persistent planning, backend demand calculation, exactly-once stock consumption by a real backend, or real staff acceptance. The fixture preview now runs with preparation recording enabled, so orders created there need recorded preparation before they can be marked ready.
 
+## Flaky Assertion (2026-10-11)
+
+"reviews the stock deduction and records a partial preparation once" failed once in CI on a commit that changed no frontend code, and passed on every local run. After the save the test read the "Ingredients used" region of the preparation record page straight away, but that page shows its heading first and its regions only once the record has loaded. The assertion now waits for the region. No application code changed. Observed red: once, in CI. Green: the file passed three times in a row locally, and the full suite of 382 passes.
+
+The other three places where the preparation tests read a region without waiting come after the same page has already been seen loaded, so they were left as they are. Other test files were not audited for the same pattern.
+
 ## Remaining in Phase 7
 
 - [x] Preparation entry with quantities prepared, actual ingredient consumption and a stock-deduction review.

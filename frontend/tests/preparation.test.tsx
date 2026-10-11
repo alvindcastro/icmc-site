@@ -75,7 +75,8 @@ describe('preparation recording workflow', () => {
     await user.click(screen.getByRole('button', {name: 'Record preparation'}));
     expect(await screen.findByText('Preparation recorded.')).toBeVisible(); expect(route()).toMatch(/^\/preparations\/fixture_preparation_/); expect(screen.getByRole('heading', {name: 'Preparation record'})).toBeVisible();
     await expect(client.request(`/ingredients/${seed.flour.id}`)).resolves.toMatchObject({stock_on_hand: '1200'});
-    const used = within(screen.getByRole('region', {name: 'Ingredients used'}));
+    // The record page loads its record after the heading appears, so wait for the region.
+    const used = within(await screen.findByRole('region', {name: 'Ingredients used'}));
     // The record points at the exact stock movement it created.
     const movement = (await client.request<any>(`/ingredients/${seed.flour.id}/movements`)).items[0].id;
     expect(used.getByRole('link', {name: 'Flour'})).toHaveAttribute('href', `/ingredients/${seed.flour.id}?movement_id=${movement}#movement-${movement}`); expect(used.getByText('2000 g -> 1200 g')).toBeVisible();
