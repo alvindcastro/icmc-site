@@ -38,12 +38,20 @@ describe('explicit development fixtures', () => {
     const client = createApiClient({ baseUrl: '/api/v1', transport: fixture.fetch });
     for (const body of [
       { username: 'staff', token: 'local-admin-token' },
-      { username: 'admin', password: 'local-admin-token' },
       { username: 'admin', token: ' local-admin-token ' },
-      { username: 'demo.staff', password: 'local-demo' },
     ]) {
       await expect(client.request('/auth/sign-in', { method: 'POST', body }))
         .rejects.toMatchObject({ code: 'invalid_credentials' });
+    }
+    // A password is not a field of the sign-in at all: the request is malformed, not a wrong token.
+    for (const body of [
+      { username: 'admin', password: 'local-admin-token' },
+      { username: 'demo.staff', password: 'local-demo' },
+    ]) {
+      await expect(client.request('/auth/sign-in', { method: 'POST', body })).rejects.toMatchObject({
+        status: 422, code: 'validation_failed',
+        fieldErrors: expect.arrayContaining([expect.objectContaining({ path: '/token' }), expect.objectContaining({ path: '/password' })]),
+      });
     }
   });
 });

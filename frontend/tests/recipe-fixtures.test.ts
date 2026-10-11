@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {createRecipeFixtures} from '../src/api/recipe-fixtures';
-import {sampleSettings} from './helpers';
+import {conformance, sampleSettings} from './helpers';
 import {recipeSeed, yieldOf} from './recipe-helpers';
 
 describe('recipe and estimate development contract', () => {
@@ -106,7 +106,7 @@ describe('recipe and estimate development contract', () => {
     await expect(api.request(`/variants/${variant.id}/estimate`)).resolves.toMatchObject({recipe_version: 2, complete: true, ingredient_cost_minor: 900});
   });
 
-  it('answers only recipe routes and refuses them without the recipes and inventory capabilities', async () => {
+  it.skipIf(conformance)('answers only recipe routes and refuses them without the recipes and inventory capabilities', async () => {
     const closed = async () => null;
     const handler = createRecipeFixtures({menu: closed, inventory: closed, settings: sampleSettings, recipeIds: new Map()});
     expect(await handler(new URL('http://fixture/api/v1/variants/variant1'))).toBeNull();

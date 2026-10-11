@@ -292,6 +292,34 @@ def test_payments_are_refused_when_stale_unknown_or_unkeyed(staff: TestClient) -
     assert read(staff, order["id"]) == order
 
 
+def test_a_deposit_recorded_while_an_edit_was_being_reviewed_is_not_overwritten(
+    staff: TestClient,
+) -> None:
+    order = place(staff)
+    edit = as_saved(order)
+    edit["notes"] = "Leave at the side door"
+    quote = quoted(staff, edit, order)
+
+    # Someone else takes a deposit before the reviewed edit is saved.
+    after = paid(staff, order, 5000)
+    stale = keyed(
+        staff,
+        "PUT",
+        f"/orders/{order['id']}",
+        {
+            "expected_version": order["version"],
+            "quote_id": quote["id"],
+            "draft": edit,
+            "acknowledge_credit": False,
+        },
+    )
+
+    conflict = error_of(stale, 409, "version_conflict")
+    assert conflict["details"]["latest_resource"] == after
+    assert read(staff, order["id"]) == after
+    assert (after["payments_minor"], after["notes"]) == (5000, order["notes"])
+
+
 def test_ledger_entries_cannot_be_edited_or_deleted(staff: TestClient) -> None:
     order = paid(staff, place(staff), 5000)
     entry = payment_of(order)

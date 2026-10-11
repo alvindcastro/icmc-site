@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {createPlanningFixtures} from '../src/api/planning-fixtures';
-import {sampleSettings} from './helpers';
+import {conformance, sampleSettings} from './helpers';
 import {planningSeed} from './planning-helpers';
 
 describe('planning development contract', () => {
@@ -79,7 +79,7 @@ describe('planning development contract', () => {
     }
   });
 
-  it('answers only the planning route and refuses it without the planning capability', async () => {
+  it.skipIf(conformance)('answers only the planning route and refuses it without the planning capability', async () => {
     const closed = async () => null;
     const handler = createPlanningFixtures({orders: closed, menu: closed, recipes: closed, inventory: closed, settings: sampleSettings});
     expect(await handler(new URL('http://fixture/api/v1/orders'))).toBeNull(); expect(await handler(new URL('http://fixture/api/v1/planning/other'))).toBeNull();

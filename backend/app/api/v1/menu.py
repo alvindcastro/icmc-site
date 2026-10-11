@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import App, JsonBody, Staff, no_query
+from app.api.description import keyed
 from app.errors import ApiError, parse
 from app.listing import Page, PageQuery, page_of, select_page
 from app.persistence.models import Category, Food
@@ -70,7 +71,13 @@ def food(food_id: str, app: App) -> FoodOut:
         return food_out(found)
 
 
-@router.post("/foods", status_code=201, response_model=FoodOut, dependencies=_plain)
+@router.post(
+    "/foods",
+    status_code=201,
+    response_model=FoodOut,
+    dependencies=_plain,
+    openapi_extra=keyed(FoodCreate),
+)
 def create_food(payload: JsonBody, request: Request, app: App) -> Response:
     def change(db: Session) -> Done:
         created = menu.create_food(db, parse(FoodCreate, payload), app.clock())
@@ -79,7 +86,9 @@ def create_food(payload: JsonBody, request: Request, app: App) -> Response:
     return operations.execute(app, request, payload, change)
 
 
-@router.patch("/foods/{food_id}", response_model=FoodOut, dependencies=_plain)
+@router.patch(
+    "/foods/{food_id}", response_model=FoodOut, dependencies=_plain, openapi_extra=keyed(FoodUpdate)
+)
 def update_food(
     food_id: str, payload: JsonBody, request: Request, staff: Staff, app: App
 ) -> Response:
@@ -92,7 +101,11 @@ def update_food(
 
 
 @router.post(
-    "/foods/{food_id}/variants", status_code=201, response_model=VariantOut, dependencies=_plain
+    "/foods/{food_id}/variants",
+    status_code=201,
+    response_model=VariantOut,
+    dependencies=_plain,
+    openapi_extra=keyed(VariantCreate),
 )
 def create_variant(food_id: str, payload: JsonBody, request: Request, app: App) -> Response:
     def change(db: Session) -> Done:
@@ -103,7 +116,12 @@ def create_variant(food_id: str, payload: JsonBody, request: Request, app: App) 
     return operations.execute(app, request, payload, change)
 
 
-@router.patch("/variants/{variant_id}", response_model=VariantOut, dependencies=_plain)
+@router.patch(
+    "/variants/{variant_id}",
+    response_model=VariantOut,
+    dependencies=_plain,
+    openapi_extra=keyed(VariantUpdate),
+)
 def update_variant(
     variant_id: str, payload: JsonBody, request: Request, staff: Staff, app: App
 ) -> Response:

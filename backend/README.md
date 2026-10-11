@@ -1,6 +1,6 @@
 # Food Reservations Backend
 
-The Python/FastAPI backend the [frontend](../frontend/README.md) targets. Phases B1 to B7 are delivered: staff can sign in with the interim `admin` token, sessions expire and can be signed out, business settings are served, the menu can be read and edited with version checks and durable operation keys, orders can be quoted, saved, edited, taken through their fulfillment steps, cancelled, paid and refunded, with a dashboard by business date, ingredients can be kept with their stock movements, purchases and price history, each menu variant can have a recipe with an ingredient cost estimate taken from the latest purchases, a period can be planned into what to cook and what to buy, and what was cooked can be recorded against orders and stock, with corrections. Every area of the contract is now served. The [API contract](../frontend/docs/phase-0/API_CONTRACT.md) describes each area. Work is tracked in the [backend plan](BACKEND_IMPLEMENTATION_PLAN.md). This is a local project for now: it runs on the developer's machine only.
+The Python/FastAPI backend the [frontend](../frontend/README.md) targets. Phases B1 to B7 are delivered: staff can sign in with the interim `admin` token, sessions expire and can be signed out, business settings are served, the menu can be read and edited with version checks and durable operation keys, orders can be quoted, saved, edited, taken through their fulfillment steps, cancelled, paid and refunded, with a dashboard by business date, ingredients can be kept with their stock movements, purchases and price history, each menu variant can have a recipe with an ingredient cost estimate taken from the latest purchases, a period can be planned into what to cook and what to buy, and what was cooked can be recorded against orders and stock, with corrections. Every area of the contract is now served, and the frontend's fixture contract tests pass against this server (the conformance run). The [API contract](../frontend/docs/phase-0/API_CONTRACT.md) describes each area. Day-to-day tasks are in the [runbook](RUNBOOK.md). Work is tracked in the [backend plan](BACKEND_IMPLEMENTATION_PLAN.md). This is a local project for now: it runs on the developer's machine only.
 
 ## Requirements and Setup
 
@@ -28,6 +28,14 @@ uv run food-admin settings set --currency USD --minor-digits 2 --timezone Americ
 Keep the quotes around the comma-separated values: PowerShell otherwise splits them into separate arguments. `token set` asks twice for a token of at least 12 characters; `token set --generate` creates one and prints it once.
 
 ## Run Locally
+
+Both sides with one command, once `npm ci` has been run in `frontend/`:
+
+```powershell
+uv run food-local
+```
+
+It starts this server and the frontend's development server in live mode, and Ctrl+C stops both. The server alone, for example under PyCharm:
 
 ```powershell
 uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --reload
@@ -59,6 +67,7 @@ The contract has no endpoints for these. Whoever runs the server uses `uv run fo
 | `menu seed` | Fills an empty development menu with the provisional rows. Refuses live settings. |
 | `preparation status` | Says whether preparation recording is on, and lists the open orders still tracked by hand with their numbered lines. |
 | `preparation baseline <reference> --reason "..."` | Brings one open order into recording. `--prepared LINE=QUANTITY` (repeatable) says how many of a line are already cooked; lines not named start at nothing; `--all` means every line is done. Moves no stock. See [Turning Preparation Recording On](#turning-preparation-recording-on). |
+| `backup <file>` | Writes the whole database, as committed at that moment, into one new file. Safe while the server runs; never overwrites. The [runbook](RUNBOOK.md#back-up) has the restore. |
 | `operations unresolved` | Lists keyed saves that were admitted and never finished. Normally there are none. |
 | `operations close <key> --reason "..."` | Records a key the server never saw as rejected, so a browser stuck on that key can move on. |
 
@@ -75,7 +84,7 @@ Rules worth knowing:
 - Planning reads orders, recipes and stock and changes nothing. Its figures are a lower bound whenever it says a recipe is missing.
 - `setup-local` enables every workflow except `preparation_recording`. That one changes how orders become ready, so it is turned on deliberately; see [Turning Preparation Recording On](#turning-preparation-recording-on).
 - A preparation and a correction are records that never change. Recording what was cooked never moves an order to its next step, and cancelling an order never returns stock.
-- Payments and refunds are entries in a ledger that is only ever added to. Do not enter real payments until a backup of the database file has been restored successfully once; that check belongs to Phase B8 and has not been done.
+- Payments and refunds are entries in a ledger that is only ever added to. Back up with `food-admin backup`, not by copying the database file. The tests rehearse a backup and its restore on synthetic data. Before real payments are entered, backups must also be scheduled and kept off the machine, and one taken from the real system must have been restored; that is deferred with hosting.
 - A staff edit that changes a confirmed food's name, or a confirmed variant's label, unit, package contents or price, makes it provisional again.
 - `operations close` is for one situation: the frontend reports a save it cannot resolve, its status check keeps answering "not found", and the draft is gone. Closing the key tells the frontend the save did not happen. If the original request arrives later it is refused.
 - With `--environment live`, work that depends on unconfirmed settings is refused, and the session cookie is always HTTPS-only whatever `.env` says.
@@ -142,7 +151,16 @@ uv run ruff format --check .
 uv run mypy
 ```
 
-The repository's CI workflow runs the same four commands, plus the frontend type check and unit tests, on every push. The tests create their own temporary databases and never touch `food-reservations.db`.
+The tests create their own temporary databases and never touch `food-reservations.db`.
+
+The conformance run executes the frontend's fixture contract tests against this server instead of the frontend's in-memory fixtures. It is started from the frontend, and starts and stops a test-only server (`tests/conformance_server.py`) by itself:
+
+```powershell
+cd ..\frontend
+npm run test:conformance
+```
+
+The repository's CI workflow runs the four commands above, the frontend type check and unit tests, and the conformance run, on every push.
 
 ## Changing the Schema
 
@@ -167,6 +185,7 @@ Review the new file under `app/persistence/migrations/versions/` and apply it wi
 app/main.py           application factory
 app/config.py         process settings read from the environment
 app/cli.py            operator commands (food-admin)
+app/local.py          one command to run both sides on this machine (food-local)
 app/http.py           request IDs, no-store, and the answer to an unexpected failure
 app/errors.py         the error envelope and the adaptation of validation errors
 app/values.py         shared value types: money, quantities, dates, instants
@@ -175,12 +194,13 @@ app/actions.py        permitted actions with their reasons
 app/api/health.py     health check, outside the versioned API
 app/context.py        the database, clock and settings a request works with
 app/api/deps.py       session, CSRF and Origin checks shared by every route
+app/api/description.py  the published API description, where it departs from FastAPI's own
 app/api/v1/           contract routers under /api/v1, one module per area
 app/schemas/          request and response models
 app/services/         business rules: credentials, sessions, accounts, business settings,
                       versions, operation keys, menu, audit, business time, orders,
                       inventory, counters, recipes, planning, preparations
 app/persistence/      database connection, models and migrations
-tests/                behavioral tests
+tests/                behavioral tests, and the server for the frontend's conformance run
 docs/                 verification record for each phase
 ```

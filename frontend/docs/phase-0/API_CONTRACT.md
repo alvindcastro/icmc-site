@@ -413,11 +413,21 @@ Corrections:
 - An empty correction is 422 at `/allocations` (`required`). At most 500 rows of each kind.
 - `GET /preparations/{id}/corrections` is not paged and takes no parameters.
 
+## Conformance (2026-10-11)
+
+Backend Phase B8 compared the two sides mechanically. None of it changes a request or response shape.
+
+- `npm run test:conformance` in `frontend/` runs the fixture contract tests against the backend. 78 pass; 5 that construct fixture internals are skipped, each covered by a backend test. A further scenario passes every response of a working day through the frontend's response checks.
+- A malformed sign-in is 422 `validation_failed`, not 401: a missing or blank `username` or `token` is `required`, and any other field, such as `password`, is `unknown_field`. The fixture was changed to match. A wrong username or token remains 401 `invalid_credentials`.
+- The backend's message for lowering a prepared count on a Ready or Completed order now uses the fixture's wording.
+- Operation keys remain a standing difference: the backend accepts only UUIDs, and the fixture accepts any text because its tests use readable keys. The frontend always sends UUIDs.
+- The backend's API description, at `/openapi.json`, names the same routes as this contract, both ways. It describes the body and `Idempotency-Key` of every keyed save, the `X-CSRF-Token` header of every request that changes something, and every refusal as the error envelope with the codes in the table above plus `method_not_allowed` and `operation_closed`.
+
 ## Backend Agreement Checklist
 
 - [ ] Backend maintainer accepts auth/session/settings/menu/order/quote/status/payment contracts for Phases 1-4.
 - [ ] Backend maintainer accepts inventory/purchase/recipe/planning/preparation contracts for Phases 5-7.
-- [ ] Backend validation/OpenAPI schema exposes these request/response fields, errors, and enums.
-- [ ] Live verification demonstrates versions, operation persistence, financial limits, and atomic stock changes using the acceptance scenarios.
+- [x] Backend validation/OpenAPI schema exposes these request/response fields, errors, and enums. Since backend Phase B8, 2026-10-11; the backend's `tests/test_description.py` keeps it so.
+- [ ] Live verification demonstrates versions, operation persistence, financial limits, and atomic stock changes using the acceptance scenarios. Progress, 2026-10-11: version conflicts, lost answers settled by status checks, repeated requests applied once and stock moved exactly once were seen in the browser against the local backend in every phase's walkthrough, and payment limits and failures midway are covered by the backend's tests. It was a local server with synthetic data, so this stays open until a hosted system is verified.
 
 These are handoff checks, not claims of existing endpoints. Test doubles may implement the proposal during frontend development; strict TDD applies to any later executable implementation.

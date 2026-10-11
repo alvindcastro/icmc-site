@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import App, JsonBody, Staff, no_query
+from app.api.description import keyed
 from app.errors import ApiError, parse
 from app.listing import Page
 from app.persistence.models import Order
@@ -71,7 +72,13 @@ def read(order_id: str, app: App) -> OrderOut:
         return orders.order_out(db, order)
 
 
-@router.post("/orders", status_code=201, response_model=OrderOut, dependencies=_plain)
+@router.post(
+    "/orders",
+    status_code=201,
+    response_model=OrderOut,
+    dependencies=_plain,
+    openapi_extra=keyed(OrderCreate),
+)
 def create(payload: JsonBody, request: Request, staff: Staff, app: App) -> Response:
     def change(db: Session) -> Done:
         order = orders.create(db, parse(OrderCreate, payload), staff.user, app.clock())
@@ -81,7 +88,12 @@ def create(payload: JsonBody, request: Request, staff: Staff, app: App) -> Respo
     return operations.execute(app, request, payload, change)
 
 
-@router.put("/orders/{order_id}", response_model=OrderOut, dependencies=_plain)
+@router.put(
+    "/orders/{order_id}",
+    response_model=OrderOut,
+    dependencies=_plain,
+    openapi_extra=keyed(OrderUpdate),
+)
 def update(order_id: str, payload: JsonBody, request: Request, staff: Staff, app: App) -> Response:
     def change(db: Session) -> Done:
         body = parse(OrderUpdate, payload)
@@ -92,7 +104,12 @@ def update(order_id: str, payload: JsonBody, request: Request, staff: Staff, app
     return operations.execute(app, request, payload, change)
 
 
-@router.post("/orders/{order_id}/transitions", response_model=OrderOut, dependencies=_plain)
+@router.post(
+    "/orders/{order_id}/transitions",
+    response_model=OrderOut,
+    dependencies=_plain,
+    openapi_extra=keyed(TransitionIn),
+)
 def transition(
     order_id: str, payload: JsonBody, request: Request, staff: Staff, app: App
 ) -> Response:
@@ -105,7 +122,12 @@ def transition(
     return operations.execute(app, request, payload, change)
 
 
-@router.post("/orders/{order_id}/cancel", response_model=OrderOut, dependencies=_plain)
+@router.post(
+    "/orders/{order_id}/cancel",
+    response_model=OrderOut,
+    dependencies=_plain,
+    openapi_extra=keyed(CancelIn),
+)
 def cancel(order_id: str, payload: JsonBody, request: Request, staff: Staff, app: App) -> Response:
     def change(db: Session) -> Done:
         body = parse(CancelIn, payload)
@@ -121,6 +143,7 @@ def cancel(order_id: str, payload: JsonBody, request: Request, staff: Staff, app
     status_code=201,
     response_model=LedgerResultOut,
     dependencies=_money,
+    openapi_extra=keyed(PaymentIn),
 )
 def pay(order_id: str, payload: JsonBody, request: Request, staff: Staff, app: App) -> Response:
     def change(db: Session) -> Done:
@@ -141,6 +164,7 @@ def pay(order_id: str, payload: JsonBody, request: Request, staff: Staff, app: A
     status_code=201,
     response_model=LedgerResultOut,
     dependencies=_money,
+    openapi_extra=keyed(RefundIn),
 )
 def refund(order_id: str, payload: JsonBody, request: Request, staff: Staff, app: App) -> Response:
     def change(db: Session) -> Done:

@@ -60,7 +60,10 @@ npm run typecheck
 npm run build
 npm exec -- playwright install chromium
 npm run test:e2e
+npm run test:conformance
 ```
+
+`npm run test:conformance` runs the fixture contract tests against the real [backend](../backend/README.md) instead of the in-memory fixtures. It needs the backend set up with `uv sync` and starts and stops a test-only server on port 8010 by itself; set `CONFORMANCE_URL` to use one that is already running. Each test gets a new database seeded like the fixture. Five tests that build fixture internals directly are skipped there, and one extra scenario, `tests/conformance/responses.live.ts`, puts every answer of a working day through the screens' own response checks. The differences found and how they were settled are in the [backend Phase B8 record](../backend/docs/phase-8/VERIFICATION.md#the-conformance-run).
 
 `npm run test:watch` runs the behavioral tests interactively. Playwright starts/stops its own live-mode Vite server on port 4173; that port must be free. It intercepts API requests with deterministic development responses. Screenshots, a print PDF and failure traces are generated in ignored `test-results/`. The 73 browser checks cover the foundation, menu, reservations, snapshots, dashboard, filters/scroll return, fulfillment, financial review/credit/refunds, ingredients/purchases/stock links, recipes/estimates, planning, preparation recording and corrections, expiry/recovery, protected printing, focus/discard/history protection, 320/375/768/1280-pixel layouts, long text and 200% text zoom. The full Vitest suite contains 382 passing tests across 33 files.
 

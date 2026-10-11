@@ -23,3 +23,6 @@ export function behindServer(transport: FetchTransport, behind: number): FetchTr
     return new Response(body, { status: response.status, headers: { 'Content-Type': 'application/json', Date: new Date(Date.now() - behind).toUTCString() } });
   };
 }
+// True in the conformance run, where the fixture contract tests talk to the real backend. A test that builds
+// fixture internals directly has no server to talk to, so it is skipped there with `it.skipIf(conformance)`.
+export const conformance = process.env.CONFORMANCE === '1';

@@ -64,6 +64,14 @@ export function createFixtureTransport(options: { latency?: number; samples?: bo
       }
       if (path === '/api/v1/auth/sign-in' && method === 'POST') {
         const body = JSON.parse(String(init?.body));
+        // A sign-in is exactly a username and a token. Anything else is malformed, not a wrong token.
+        const fields = [
+          ...['username', 'token'].filter(name => typeof body?.[name] !== 'string' || !body[name].trim()).map(name => ({ path: `/${name}`, code: 'required', message: `Enter your ${name}.` })),
+          ...Object.keys(body ?? {}).filter(name => !['username', 'token'].includes(name)).map(name => ({ path: `/${name}`, code: 'unknown_field', message: 'This field is not accepted.' })),
+        ];
+        if (fields.length) {
+          return json({ error: { code: 'validation_failed', message: 'Check the highlighted fields.', request_id: 'development-fixture', field_errors: fields, details: {} } }, 422);
+        }
         if (body.username !== 'admin' || body.token !== 'local-admin-token') {
           return failure(401, 'invalid_credentials', 'The username or token is incorrect.');
         }

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import App, JsonBody, Staff, no_query
+from app.api.description import keyed
 from app.errors import parse
 from app.listing import Page, PageQuery
 from app.schemas.inventory import (
@@ -60,7 +61,13 @@ def ingredient(ingredient_id: str, app: App) -> IngredientOut:
         return inventory.ingredient_out(inventory.get_ingredient(db, ingredient_id))
 
 
-@router.post("/ingredients", status_code=201, response_model=IngredientOut, dependencies=_plain)
+@router.post(
+    "/ingredients",
+    status_code=201,
+    response_model=IngredientOut,
+    dependencies=_plain,
+    openapi_extra=keyed(IngredientCreate),
+)
 def create_ingredient(payload: JsonBody, request: Request, app: App) -> Response:
     def change(db: Session) -> Done:
         created = inventory.create_ingredient(db, parse(IngredientCreate, payload), app.clock())
@@ -69,7 +76,12 @@ def create_ingredient(payload: JsonBody, request: Request, app: App) -> Response
     return operations.execute(app, request, payload, change)
 
 
-@router.patch("/ingredients/{ingredient_id}", response_model=IngredientOut, dependencies=_plain)
+@router.patch(
+    "/ingredients/{ingredient_id}",
+    response_model=IngredientOut,
+    dependencies=_plain,
+    openapi_extra=keyed(IngredientUpdate),
+)
 def update_ingredient(
     ingredient_id: str, payload: JsonBody, request: Request, app: App
 ) -> Response:
@@ -107,6 +119,7 @@ def preview_movement(ingredient_id: str, body: MovementIn, app: App) -> Movement
     status_code=201,
     response_model=MovementResultOut,
     dependencies=_plain,
+    openapi_extra=keyed(MovementSave),
 )
 def save_movement(
     ingredient_id: str, payload: JsonBody, request: Request, staff: Staff, app: App
@@ -145,7 +158,11 @@ def purchase(purchase_id: str, app: App) -> PurchaseOut:
 
 
 @router.post(
-    "/purchases", status_code=201, response_model=PurchaseResultOut, dependencies=_buying_plain
+    "/purchases",
+    status_code=201,
+    response_model=PurchaseResultOut,
+    dependencies=_buying_plain,
+    openapi_extra=keyed(PurchaseSave),
 )
 def save_purchase(payload: JsonBody, request: Request, staff: Staff, app: App) -> Response:
     def change(db: Session) -> Done:

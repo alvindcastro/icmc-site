@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {createPreparationFixtures} from '../src/api/preparation-fixtures';
-import {sampleSettings} from './helpers';
+import {conformance, sampleSettings} from './helpers';
 import {planningSeed} from './planning-helpers';
 
 const recording = () => planningSeed({preparation: true});
@@ -173,7 +173,7 @@ describe('preparation recording development contract', () => {
     expect((await planning('2026-10-10')).foods[0].orders.map((row: any) => row.order_id)).toEqual([full.id]);
   });
 
-  it('answers only preparation routes and refuses them without preparation recording', async () => {
+  it.skipIf(conformance)('answers only preparation routes and refuses them without preparation recording', async () => {
     const closed = Object.assign(async () => null, {allocate: () => [], consume: () => ({movements: [], ingredients: []}), correct: () => ({movements: [], ingredients: []})});
     const handler = createPreparationFixtures({orders: closed, inventory: closed, recipes: closed, settings: sampleSettings, operations: new Map()});
     expect(await handler(new URL('http://fixture/api/v1/planning'))).toBeNull(); expect(await handler(new URL('http://fixture/api/v1/orders'))).toBeNull();

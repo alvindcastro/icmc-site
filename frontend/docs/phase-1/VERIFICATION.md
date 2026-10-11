@@ -74,6 +74,16 @@ The fixture's `csrf_invalid` message was changed with the server's to "The secur
 
 Still open for this gate: the business confirmations and auth agreement from Phase 0, and a staff walkthrough. Expiry during a save waits for the first live save endpoint in backend Phase B2. Nothing was run on Windows.
 
+## Conformance With the Backend (2026-10-11)
+
+Backend Phase B8 added a conformance run: `npm run test:conformance` executes the fixture contract tests against the real FastAPI server. Its first run passed 80 of 82 tests. One of the two differences was in this phase's fixture.
+
+A sign-in body that carries `password` in place of `token` was answered by the fixture with 401 `invalid_credentials`. The backend answers 422 `validation_failed`, with field errors at `/token` and `/password`, because a sign-in is exactly a username and a token and it refuses unknown fields everywhere. The fixture now refuses a malformed sign-in the same way: a missing or blank `username` or `token` is `required`, and any other field is `unknown_field`. A wrong username or token is still 401 `invalid_credentials`. The test "rejects another account, password-based login, and a whitespace-altered token" expects both. The sign-in form always sends a username and a token, so no screen behaves differently.
+
+Observed: the test failed against the backend before the change, and passes against both the fixture and the backend after it. `npm test`: 382 passed in 33 files. `npm run test:e2e`: 73 passed. `npm run test:conformance`: 78 passed, 5 skipped.
+
+A helper, `conformance`, was added to `tests/helpers.ts`. Five tests that construct fixture internals directly use `it.skipIf(conformance)`: they have no server to talk to, and they still run in `npm test`.
+
 ## Entry Points
 
 | File | Responsibility |

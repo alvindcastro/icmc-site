@@ -2,7 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {createApiClient} from '../src/api/client';
 import {createFixtureTransport} from '../src/api/fixtures';
 import {createInventoryFixtures} from '../src/api/inventory-fixtures';
-import {sampleSettings} from './helpers';
+import {conformance, sampleSettings} from './helpers';
 
 export async function inventoryApi() {
   const transport = createFixtureTransport({latency: 0});
@@ -32,7 +32,7 @@ describe('inventory and purchase development contract', () => {
     for(const body of [draft([line(egg.id,{unit:'piece',quantity:'1.5'})]),draft([line(egg.id,{unit:'piece',total_cost_minor:Number.MAX_SAFE_INTEGER}),line(egg.id,{unit:'piece'})]),draft([line(egg.id,{unit:'piece'})],{purchased_on:'2026-02-30'}),draft([line(egg.id,{unit:'piece',unexpected:true})])]) await expect(api.request('/purchases/preview',{method:'POST',body:{draft:body}})).rejects.toMatchObject({status:422});
     await expect(api.request('/purchases?date_from=2026-10-08&date_to=2026-10-07')).rejects.toMatchObject({status:422});await expect(api.request(`/ingredients/${egg.id}`)).resolves.toMatchObject({stock_on_hand:'0'});
   });
-  it('admits simultaneous identical operation keys only once, with an immutable successful replay', async () => {
+  it.skipIf(conformance)('admits simultaneous identical operation keys only once, with an immutable successful replay', async () => {
     const handler = createInventoryFixtures({...sampleSettings, capabilities: {...sampleSettings.capabilities, inventory:true,purchases:true}}, new Map());
     const request = {method:'POST', headers:{'Idempotency-Key':'concurrent-key'}, body:JSON.stringify({name:'Flour',base_unit:'g'})};
     const [a,b] = await Promise.all([handler(new URL('http://fixture/api/v1/ingredients'),request),handler(new URL('http://fixture/api/v1/ingredients'),request)]);

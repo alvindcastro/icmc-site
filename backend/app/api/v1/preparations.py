@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import App, JsonBody, Staff, no_query
+from app.api.description import keyed
 from app.errors import parse
 from app.schemas.preparations import (
     CorrectionIn,
@@ -41,7 +42,12 @@ def preview(body: PreparationPreviewIn, app: App) -> PreparationPreviewOut:
         return preparations.preview(db, body, app.clock())
 
 
-@router.post("/preparations", status_code=201, response_model=PreparationResultOut)
+@router.post(
+    "/preparations",
+    status_code=201,
+    response_model=PreparationResultOut,
+    openapi_extra=keyed(PreparationSave),
+)
 def save(payload: JsonBody, request: Request, staff: Staff, app: App) -> Response:
     def change(db: Session) -> Done:
         body = parse(PreparationSave, payload)
@@ -80,6 +86,7 @@ def preview_correction(preparation_id: str, body: CorrectionIn, app: App) -> Cor
     "/preparations/{preparation_id}/corrections",
     status_code=201,
     response_model=CorrectionResultOut,
+    openapi_extra=keyed(CorrectionSave),
 )
 def save_correction(
     preparation_id: str, payload: JsonBody, request: Request, staff: Staff, app: App

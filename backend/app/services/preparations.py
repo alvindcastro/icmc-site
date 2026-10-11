@@ -672,7 +672,7 @@ def _review_correction(
                 FieldError(
                     f"{at}/delta_quantity",
                     "order_finished",
-                    "A prepared count cannot be lowered while the order is ready or completed.",
+                    "Prepared quantities cannot be lowered while the order is Ready or Completed.",
                 )
             )
             continue

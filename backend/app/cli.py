@@ -2,9 +2,11 @@ import argparse
 import json
 import re
 import secrets
+import sqlite3
 import sys
 from collections.abc import Callable, Sequence
 from getpass import getpass
+from pathlib import Path
 
 from sqlalchemy import func, select
 
@@ -74,6 +76,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     baseline.add_argument("--all", action="store_true", help="every line is fully prepared")
     baseline.add_argument("--reason", required=True, help="where the counts came from")
+    backup = commands.add_parser(
+        "backup", help="copy the whole database into one new file; safe while the server runs"
+    )
+    backup.add_argument("file", type=Path, help="the file to write; it must not exist yet")
     operation = commands.add_parser("operations", help="inspect or close keyed saves")
     actions = operation.add_subparsers(dest="action", required=True)
     actions.add_parser("unresolved", help="list saves that were admitted and never finished")
@@ -267,6 +273,31 @@ def _preparation(args: argparse.Namespace, database: Database, clock: Clock) -> 
             )
 
 
+def _backup(target: Path, database: Database) -> None:
+    """Write everything, committed up to this moment, into one new file.
+
+    SQLite's own backup is used rather than a copy of the file: recent changes can still be in
+    the write-ahead file beside the database, and a plain copy of the main file would miss them.
+    """
+    if target.exists():
+        raise OperatorError(f"{target} already exists. A backup never overwrites; pick a new name.")
+    if not target.parent.is_dir():
+        raise OperatorError(f"The directory {target.parent} does not exist.")
+    destination = sqlite3.connect(target)
+    try:
+        with database.engine.connect() as connection:
+            source = connection.connection.driver_connection
+            assert isinstance(source, sqlite3.Connection)
+            source.backup(destination)
+    except BaseException:
+        # Half a backup is worse than none: it would look like one.
+        destination.close()
+        target.unlink(missing_ok=True)
+        raise
+    destination.close()
+    print(f"Backed up to {target}. It is one complete file. Keep a copy off this machine.")
+
+
 def _operations(args: argparse.Namespace, database: Database, clock: Clock) -> None:
     if args.action == "unresolved":
         with database.read() as db:
@@ -344,6 +375,8 @@ def main(
             _menu(args, database, clock)
         elif args.command == "preparation":
             _preparation(args, database, clock)
+        elif args.command == "backup":
+            _backup(args.file, database)
         else:
             _operations(args, database, clock)
         return 0

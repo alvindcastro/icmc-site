@@ -1,11 +1,13 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 
 from fastapi import FastAPI
 
 from app import errors
 from app.api import health, v1
+from app.api.description import describe
 from app.clock import Clock, utc_now
 from app.config import Settings
 from app.http import RequestContext
@@ -57,4 +59,5 @@ def create_app(settings: Settings | None = None, *, clock: Clock = utc_now) -> F
     errors.install(app)
     app.include_router(health.router)
     app.include_router(v1.router)
+    app.openapi = partial(describe, app)  # type: ignore[method-assign]
     return app
