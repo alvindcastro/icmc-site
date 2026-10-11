@@ -229,7 +229,7 @@ Backend refinement (2026-10-11), from implementing this section in backend Phase
 - In a live system, unconfirmed settings are 409 `settings_unconfirmed` with `details.unconfirmed` naming the groups, and an unconfirmed food or variant on a new or growing line is 409 `menu_unconfirmed` with `details.food_id` and `details.variant_id`.
 - With a fixed delivery charge the settings' amount is used whatever the draft sends.
 - References are `DEV-0001`, `DEV-0002`, ... under development settings and `ORD-...` under live ones. Lines are returned in the order of the saved draft. A line removed by an edit no longer appears.
-- Until the backend serves Phase 4, `start_preparing`, `mark_ready`, `complete` and `cancel` are reported as blocked with reason code `not_released`, and `record_payment` and `refund` with `payments_disabled`; `ledger` is empty and the payment amounts are zero.
+- Between backend Phases B3 and B4 the later steps, cancellation and payments were reported as blocked; since Phase B4 they follow the order's state, as the next section describes.
 - `sort=fulfillment_desc` reverses the ID tie-breaker as well. `status` must name at least one status. `date_from` after `date_to` is reported at `/query/date_to`. The dashboard accepts `date` only.
 
 ## Status and Payments (Phase 4)
@@ -250,6 +250,15 @@ Financial amounts are positive safe integers. Dates are valid `YYYY-MM-DD` busin
 Financial success is the complete `{entry, order}` result, not a raw Order. The entry must be present in that Order's ledger and carry the submitted operation UUID. The shared operation envelope uses `resource_type: "order"`, `resource_id: order.id`, and the exact original wrapped result in `result.body`; transition/cancellation results remain raw Orders. Successful mutations increment the expected order version once. Replay returns the immutable original response before stale-version checks; both direct success and verified lookup trigger a fresh current-order read. Only the UUID is persisted in the existing order-operation marker, never a financial draft. A missing operation permits an explicit identical-body/key retry only while that attempt survives in memory; after expiry/reload, operator reconciliation is required if its status remains unknown.
 
 When `preparation_recording=false`, Ready/Completed uses staff attestation and causes no stock change. The frontend attestation checkbox gates confirmation; the transition body remains `{expected_version, to_status}`. When enabled, both require zero remaining quantity on every line and backend permissions remain authoritative. Payment settlement is not a requirement for completion. The protected `/orders/{id}/print` frontend route reads the authoritative matching Order snapshot and current balance/credit, not the current menu; printing adds no backend mutation. These refinements are implemented only in explicit development fixtures until the backend maintainer accepts and implements them.
+
+Backend refinement (2026-10-11), from implementing this section in backend Phase B4. None of it changes a request or response shape.
+
+- A step or cancellation the order's state does not allow is 409 `action_not_allowed` with the action's reason. A payment or refund the state does not allow (nothing due, a cancelled order, nothing refundable) is 403 `action_forbidden` with the action's reason. With the `payments` capability off, both financial routes are 403 `action_forbidden` and both actions carry the reason "Payments are not enabled."
+- Checks run in this order: the capability, the shape of the body, the order (404), the version (409), the action (403 or 409), the method, the payment a refund names, then the amount.
+- An amount over the limit is 422 at `/amount_minor` with code `exceeds_maximum` and `details.maximum_amount_minor`, which can be zero. A payment's limit is the balance due. A refund's limit is what is left of the payment it names; because net paid is the sum of what is left of every payment, that limit also keeps net paid from going negative.
+- A method outside `settings.payment_methods` is reported at `/method`. A `payment_id` that is not a payment of this order, including the ID of a refund or of another order's payment, is reported at `/payment_id`.
+- `acknowledge_consumed_stock` is required as a boolean; false is accepted while the order has no recorded consumption. Reasons are trimmed.
+- Until the backend serves Phase 7, `record_preparation` is blocked on every order, `preparation_tracking` is `manual`, and `cancellation_requires_stock_acknowledgment` is false.
 
 ## Inventory and Purchases (Phase 5)
 

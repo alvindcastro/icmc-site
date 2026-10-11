@@ -24,6 +24,7 @@ TABLES = {
     "order_items",
     "order_status_events",
     "quotes",
+    "ledger_entries",
 }
 
 

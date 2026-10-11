@@ -16,6 +16,7 @@ from app.persistence.models import (
     BusinessSettings,
     Counter,
     Food,
+    LedgerEntry,
     Order,
     OrderItem,
     OrderStatusEvent,
@@ -26,15 +27,19 @@ from app.persistence.models import (
 from app.schemas.menu import PackageContents
 from app.schemas.orders import (
     STATUSES,
+    CancelIn,
     DashboardOut,
     DraftIn,
+    LedgerEntryOut,
     OrderCreate,
     OrderOut,
     OrderQuery,
     OrderSummaryOut,
     OrderUpdate,
+    PaymentIn,
     QuoteIn,
     QuoteOut,
+    RefundIn,
     TransitionIn,
 )
 from app.services import business_settings, business_time
@@ -133,8 +138,36 @@ def settle(total: int, status: str, payments: int = 0, refunds: int = 0) -> Sett
 
 
 def _ledger_totals(order: Order) -> tuple[int, int]:
-    # Payments and refunds arrive with the ledger; until then every order holds nothing.
-    return 0, 0
+    """Payments and refunds, added up from the ledger every time: no total is stored."""
+    payments = sum(entry.amount_minor for entry in order.ledger if entry.type == "payment")
+    refunds = sum(entry.amount_minor for entry in order.ledger if entry.type == "refund")
+    return payments, refunds
+
+
+def _refundable(order: Order, payment: LedgerEntry) -> int:
+    """What is left of a payment after the refunds already made from it."""
+    returned = sum(entry.amount_minor for entry in order.ledger if entry.payment_id == payment.id)
+    return payment.amount_minor - returned
+
+
+def entry_out(order: Order, entry: LedgerEntry) -> LedgerEntryOut:
+    return LedgerEntryOut.model_validate(
+        {
+            "id": entry.id,
+            "type": entry.type,
+            "payment_id": entry.payment_id,
+            "amount_minor": entry.amount_minor,
+            "refundable_minor": _refundable(order, entry) if entry.type == "payment" else None,
+            "business_date": entry.business_date,
+            "method": entry.method,
+            "reference": entry.reference,
+            "note": entry.note,
+            "reason": entry.reason,
+            "operation_id": entry.operation_id,
+            "recorded_at": entry.recorded_at,
+            "recorded_by": {"id": entry.actor_id, "display_name": entry.actor_display_name},
+        }
+    )
 
 
 def _contents(quantity: int | None) -> PackageContents | None:
@@ -162,31 +195,56 @@ def _not_found() -> ApiError:
     return ApiError(404, "not_found", "This order does not exist.")
 
 
-def permitted_actions(order: Order) -> dict[str, PermittedAction]:
+def permitted_actions(order: Order, payments_enabled: bool) -> dict[str, PermittedAction]:
     """Every action staff could take on an order, each allowed or blocked with its reason."""
-    later = blocked("not_released", "This step is not available in this version yet.")
-    payments = blocked("payments_disabled", "Payments are not enabled.")
+    status = order.status
+    money = settle(order.total_minor, status, *_ledger_totals(order))
+
+    def when(condition: bool, code: str, reason: str) -> PermittedAction:
+        return allowed() if condition else blocked(code, reason)
+
+    if not payments_enabled:
+        pay = refund = blocked("payments_disabled", "Payments are not enabled.")
+    else:
+        pay = (
+            blocked("order_cancelled", "Cancelled orders cannot accept payments.")
+            if status == "cancelled"
+            else when(money.balance_due > 0, "nothing_due", "No balance is due.")
+        )
+        refund = when(money.net_paid > 0, "nothing_refundable", "No refundable funds remain.")
     return {
-        "edit": allowed()
-        if order.status in _EDITABLE
-        else blocked("order_not_editable", "Only pending or confirmed orders can be edited."),
-        "confirm": allowed()
-        if order.status == "pending"
-        else blocked("order_not_pending", "Only a pending order can be confirmed."),
-        "start_preparing": later,
-        "mark_ready": later,
-        "complete": later,
-        "cancel": later,
-        "record_payment": payments,
-        "refund": payments,
+        "edit": when(
+            status in _EDITABLE,
+            "order_not_editable",
+            "Only pending or confirmed orders can be edited.",
+        ),
+        "confirm": when(
+            status == "pending", "order_not_pending", "Only a pending order can be confirmed."
+        ),
+        "start_preparing": when(
+            status == "confirmed", "order_not_confirmed", "Start preparing a confirmed order."
+        ),
+        # While preparation recording is off, staff attest that the food is ready.
+        "mark_ready": when(
+            status == "preparing", "order_not_preparing", "Mark ready after preparation starts."
+        ),
+        "complete": when(status == "ready", "order_not_ready", "Complete a ready order."),
+        "cancel": when(
+            status in ("pending", "confirmed", "preparing", "ready"),
+            "order_finished",
+            "Completed or cancelled orders cannot be cancelled.",
+        ),
+        "record_payment": pay,
+        "refund": refund,
         "record_preparation": blocked(
             "preparation_recording_disabled", "Preparation recording is not enabled."
         ),
     }
 
 
-def order_out(order: Order) -> OrderOut:
+def order_out(db: Session, order: Order) -> OrderOut:
     money = settle(order.total_minor, order.status, *_ledger_totals(order))
+    payments_enabled = business_settings.enabled(db, "payments")
     items = sorted(
         (item for item in order.lines if item.removed_at is None), key=lambda item: item.position
     )
@@ -244,7 +302,7 @@ def order_out(order: Order) -> OrderOut:
             "balance_due_minor": money.balance_due,
             "customer_credit_minor": money.customer_credit,
             "payment_status": money.payment_status,
-            "ledger": [],
+            "ledger": [entry_out(order, entry) for entry in order.ledger],
             "status_history": [
                 {
                     "id": event.id,
@@ -256,7 +314,7 @@ def order_out(order: Order) -> OrderOut:
                 }
                 for event in sorted(order.events, key=lambda event: event.sequence)
             ],
-            "permitted_actions": permitted_actions(order),
+            "permitted_actions": permitted_actions(order, payments_enabled),
             "created_at": order.created_at,
             "updated_at": order.updated_at,
         }
@@ -286,8 +344,8 @@ def summary_out(order: Order) -> OrderSummaryOut:
     )
 
 
-def _latest(order: Order) -> Any:
-    return order_out(order).model_dump(mode="json")
+def _latest(db: Session, order: Order) -> Any:
+    return order_out(db, order).model_dump(mode="json")
 
 
 def calculate(db: Session, draft: DraftIn, order: Order | None) -> Calculation:
@@ -448,8 +506,8 @@ def quote(db: Session, body: QuoteIn, now: datetime) -> QuoteOut:
         order = db.get(Order, body.order_id)
         if order is None:
             raise _not_found()
-        require_current(order, body.expected_version, "order", lambda: _latest(order))
-        _require_editable(order)
+        require_current(order, body.expected_version, "order", lambda: _latest(db, order))
+        _require_editable(db, order)
     result = calculate(db, body.draft, order)
     # Anyone signed in can ask for quotes freely, so finished ones are cleared as new ones come.
     db.execute(delete(Quote).where(Quote.expires_at <= now))
@@ -505,8 +563,12 @@ def quote(db: Session, body: QuoteIn, now: datetime) -> QuoteOut:
     )
 
 
-def _require_editable(order: Order) -> None:
-    edit = permitted_actions(order)["edit"]
+def _actions(db: Session, order: Order) -> dict[str, PermittedAction]:
+    return permitted_actions(order, business_settings.enabled(db, "payments"))
+
+
+def _require_editable(db: Session, order: Order) -> None:
+    edit = _actions(db, order)["edit"]
     if not edit.allowed:
         raise ApiError(403, "action_forbidden", edit.reason or "This order cannot be edited.")
 
@@ -539,7 +601,12 @@ def _agreed(
 
 
 def _event(
-    order: Order, from_status: str | None, to_status: str, actor: StaffUser, now: datetime
+    order: Order,
+    from_status: str | None,
+    to_status: str,
+    actor: StaffUser,
+    now: datetime,
+    reason: str | None = None,
 ) -> None:
     order.events.append(
         OrderStatusEvent(
@@ -550,7 +617,7 @@ def _event(
             changed_at=now,
             actor_id=actor.id,
             actor_display_name=actor.display_name,
-            reason=None,
+            reason=reason,
         )
     )
 
@@ -638,8 +705,8 @@ def update(db: Session, order_id: str, body: OrderUpdate, actor: StaffUser, now:
     order = db.get(Order, order_id)
     if order is None:
         raise _not_found()
-    advance(order, body.expected_version, "order", lambda: _latest(order))
-    _require_editable(order)
+    advance(order, body.expected_version, "order", lambda: _latest(db, order))
+    _require_editable(db, order)
     result = _agreed(db, body.quote_id, body.draft, order, body.expected_version, now)
     if result.net_paid > result.total and not body.acknowledge_credit:
         raise invalid(
@@ -659,9 +726,9 @@ def transition(
     order = db.get(Order, order_id)
     if order is None:
         raise _not_found()
-    advance(order, body.expected_version, "order", lambda: _latest(order))
+    advance(order, body.expected_version, "order", lambda: _latest(db, order))
     step = _STEPS.get(body.to_status)
-    action = permitted_actions(order).get(step) if step else None
+    action = _actions(db, order).get(step) if step else None
     if action is None or not action.allowed:
         reason = action.reason if action else None
         raise ApiError(
@@ -671,6 +738,131 @@ def transition(
     order.status = body.to_status
     order.updated_at = now
     return order
+
+
+def cancel(db: Session, order_id: str, body: CancelIn, actor: StaffUser, now: datetime) -> Order:
+    """Cancel an open order. Its lines, totals and ledger stay as they were: only what is owed
+    goes to nothing, so anything already paid shows as credit to be refunded separately."""
+    order = db.get(Order, order_id)
+    if order is None:
+        raise _not_found()
+    advance(order, body.expected_version, "order", lambda: _latest(db, order))
+    action = _actions(db, order)["cancel"]
+    if not action.allowed:
+        raise ApiError(
+            409, "action_not_allowed", action.reason or "This order cannot be cancelled."
+        )
+    _event(order, order.status, "cancelled", actor, now, body.reason)
+    order.status = "cancelled"
+    order.updated_at = now
+    return order
+
+
+def _too_much(maximum: int, message: str) -> ApiError:
+    return ApiError(
+        422,
+        "validation_failed",
+        "Check the highlighted fields.",
+        field_errors=[FieldError("/amount_minor", "exceeds_maximum", message)],
+        details={"maximum_amount_minor": maximum},
+    )
+
+
+def _record(
+    db: Session,
+    order_id: str,
+    expected_version: int,
+    action_name: str,
+    method: str,
+) -> Order:
+    """The checks a payment and a refund share: the order, its version, the action, the method."""
+    order = db.get(Order, order_id)
+    if order is None:
+        raise _not_found()
+    advance(order, expected_version, "order", lambda: _latest(db, order))
+    action = _actions(db, order)[action_name]
+    if not action.allowed:
+        raise ApiError(403, "action_forbidden", action.reason or "This is not allowed.")
+    if method not in business_settings.require(db).payment_methods:
+        raise invalid(
+            FieldError(
+                "/method", "method_not_accepted", "The business does not accept this method."
+            )
+        )
+    return order
+
+
+def _append(
+    order: Order,
+    kind: str,
+    amount: int,
+    business_date: date,
+    body: PaymentIn | RefundIn,
+    key: str,
+    actor: StaffUser,
+    now: datetime,
+) -> LedgerEntry:
+    entry = LedgerEntry(
+        id=new_id("led"),
+        sequence=len(order.ledger),
+        type=kind,
+        payment_id=body.payment_id if isinstance(body, RefundIn) else None,
+        amount_minor=amount,
+        business_date=business_date,
+        method=body.method,
+        reference=body.reference,
+        note=body.note,
+        reason=body.reason if isinstance(body, RefundIn) else None,
+        operation_id=key,
+        recorded_at=now,
+        actor_id=actor.id,
+        actor_display_name=actor.display_name,
+    )
+    order.ledger.append(entry)
+    order.updated_at = now
+    return entry
+
+
+def pay(
+    db: Session, order_id: str, body: PaymentIn, key: str, actor: StaffUser, now: datetime
+) -> tuple[LedgerEntry, Order]:
+    """Record a payment of no more than is due. The balance is read inside the transaction
+    that adds the entry, and the order's version moves with it, so two payments made at once
+    cannot both be accepted."""
+    order = _record(db, order_id, body.expected_version, "record_payment", body.method)
+    payments, refunds = _ledger_totals(order)
+    due = settle(order.total_minor, order.status, payments, refunds).balance_due
+    if body.amount_minor > due:
+        raise _too_much(due, "Enter no more than the balance due.")
+    if payments + body.amount_minor > MAX_SAFE_INTEGER:
+        raise invalid(FieldError("/amount_minor", "overflow", "This amount is too large."))
+    return _append(order, "payment", body.amount_minor, body.paid_on, body, key, actor, now), order
+
+
+def refund(
+    db: Session, order_id: str, body: RefundIn, key: str, actor: StaffUser, now: datetime
+) -> tuple[LedgerEntry, Order]:
+    """Record a refund from one original payment, up to what is left of that payment."""
+    order = _record(db, order_id, body.expected_version, "refund", body.method)
+    original = next(
+        (
+            entry
+            for entry in order.ledger
+            if entry.id == body.payment_id and entry.type == "payment"
+        ),
+        None,
+    )
+    if original is None:
+        raise invalid(
+            FieldError("/payment_id", "unknown_payment", "Choose a payment of this order.")
+        )
+    # A payment's refunds never exceed it, so this limit also keeps net paid from going negative.
+    remaining = _refundable(order, original)
+    if body.amount_minor > remaining:
+        raise _too_much(remaining, "Enter no more than is left of this payment.")
+    return _append(
+        order, "refund", body.amount_minor, body.refunded_on, body, key, actor, now
+    ), order
 
 
 def _statuses(text: str | None) -> list[str]:

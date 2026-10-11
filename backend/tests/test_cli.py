@@ -163,7 +163,7 @@ def test_local_setup_makes_a_new_machine_ready_in_one_command(
     assert not any(value for value in settings["confirmation"].values())
     enabled = {name for name, enabled in settings["capabilities"].items() if enabled}
     assert enabled == business_settings.RELEASED
-    assert "payments" not in enabled
+    assert "inventory" not in enabled
     assert [food["name"] for food in foods] == [
         "Beef Caldereta",
         "Fresh Lumpia",

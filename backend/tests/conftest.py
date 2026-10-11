@@ -1,10 +1,12 @@
 import shutil
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from app.cli import main
 from app.config import Settings
@@ -40,7 +42,15 @@ def clock() -> FakeClock:
 
 @pytest.fixture
 def app(config: Settings, clock: FakeClock) -> FastAPI:
-    return create_app(config, clock=clock)
+    app = create_app(config, clock=clock)
+
+    # A test database dies with its test, so it need not survive a power cut. Skipping the
+    # wait for the disk on every commit takes about a third off the suite.
+    @event.listens_for(app.state.database.engine, "connect")
+    def hurry(connection: Any, _: Any) -> None:
+        connection.execute("PRAGMA synchronous=OFF")
+
+    return app
 
 
 @pytest.fixture

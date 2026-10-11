@@ -7,7 +7,7 @@ from pydantic_core import PydanticCustomError
 from app.actions import PermittedAction
 from app.listing import Page, PageQuery
 from app.schemas.menu import PackageContents, SellingUnit, Version
-from app.values import CalendarDate, Instant, Money, SellingQuantity
+from app.values import MAX_SAFE_INTEGER, CalendarDate, Instant, Money, SellingQuantity
 
 OrderStatus = Literal["pending", "confirmed", "preparing", "ready", "completed", "cancelled"]
 PaymentStatus = Literal["unpaid", "partial", "paid", "credit_due"]
@@ -120,6 +120,44 @@ class TransitionIn(BaseModel):
     to_status: OrderStatus
 
 
+class CancelIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: Version
+    reason: Annotated[Text, _entered(1000, "Enter a reason.")]
+    # Must be true once preparation has consumed stock, which cancelling never returns.
+    acknowledge_consumed_stock: StrictBool
+
+
+Amount = Annotated[int, Field(strict=True, ge=1, le=MAX_SAFE_INTEGER)]
+PaymentMethod = Literal["cash", "bank_transfer", "other"]
+Reference = Annotated[str, Field(strict=True, max_length=200)]
+
+
+class PaymentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: Version
+    amount_minor: Amount
+    paid_on: CalendarDate
+    method: PaymentMethod
+    reference: Reference = ""
+    note: Notes = ""
+
+
+class RefundIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: Version
+    payment_id: Text
+    amount_minor: Amount
+    refunded_on: CalendarDate
+    method: PaymentMethod
+    reason: Annotated[Text, _entered(1000, "Enter a reason.")]
+    reference: Reference = ""
+    note: Notes = ""
+
+
 class OrderQuery(PageQuery):
     q: Annotated[str | None, Field(max_length=200)] = None
     date_from: CalendarDate | None = None
@@ -216,6 +254,23 @@ class StatusEventOut(BaseModel):
     reason: str | None
 
 
+class LedgerEntryOut(BaseModel):
+    id: str
+    type: Literal["payment", "refund"]
+    payment_id: str | None
+    amount_minor: Amount
+    # For a payment, what can still be refunded from it; null for a refund.
+    refundable_minor: Money | None
+    business_date: date
+    method: PaymentMethod
+    reference: str
+    note: str
+    reason: str | None
+    operation_id: str
+    recorded_at: Instant
+    recorded_by: ActorOut
+
+
 class OrderOut(Amounts):
     id: str
     reference: str
@@ -230,11 +285,18 @@ class OrderOut(Amounts):
     payments_minor: Money
     refunds_minor: Money
     payment_status: PaymentStatus
-    ledger: list[dict[str, object]]
+    ledger: list[LedgerEntryOut]
     status_history: list[StatusEventOut]
     permitted_actions: dict[str, PermittedAction]
     created_at: Instant
     updated_at: Instant
+
+
+class LedgerResultOut(BaseModel):
+    """A recorded payment or refund together with the order as it then stands."""
+
+    entry: LedgerEntryOut
+    order: OrderOut
 
 
 class OrderSummaryOut(BaseModel):

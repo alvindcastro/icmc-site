@@ -22,7 +22,7 @@ CAPABILITIES = (
 )
 # Workflows this version of the server actually implements. Each backend phase adds its own;
 # nothing outside this set can be switched on or is ever reported as on.
-RELEASED: frozenset[str] = frozenset({"menu", "orders"})
+RELEASED: frozenset[str] = frozenset({"menu", "orders", "payments"})
 
 ENVIRONMENTS = ("development", "live")
 FULFILLMENT_METHODS = ("pickup", "delivery")
@@ -74,6 +74,12 @@ def require(db: Session) -> BusinessSettings:
             "Business settings have not been set up yet. Ask whoever runs the server.",
         )
     return settings
+
+
+def enabled(db: Session, name: str) -> bool:
+    """Whether the operator has enabled a workflow this server implements."""
+    settings = load(db)
+    return settings is not None and name in settings.capabilities and name in RELEASED
 
 
 def require_capability(db: Session, name: str) -> None:

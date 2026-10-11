@@ -235,6 +235,9 @@ class Order(Base):
     events: Mapped[list["OrderStatusEvent"]] = relationship(
         order_by="OrderStatusEvent.sequence", lazy="selectin"
     )
+    ledger: Mapped[list["LedgerEntry"]] = relationship(
+        order_by="LedgerEntry.sequence", lazy="selectin"
+    )
 
 
 class OrderItem(Base):
@@ -285,3 +288,28 @@ class Quote(Base):
     dependencies: Mapped[str] = mapped_column(String)
     expires_at: Mapped[datetime] = mapped_column(UtcInstant, index=True)
     created_at: Mapped[datetime] = mapped_column(UtcInstant)
+
+
+class LedgerEntry(Base):
+    """One payment or refund. Entries are only ever added; none is changed or removed."""
+
+    __tablename__ = "ledger_entries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
+    sequence: Mapped[int] = mapped_column()
+    type: Mapped[str] = mapped_column(String)
+    # For a refund, the payment it returns money from.
+    payment_id: Mapped[str | None] = mapped_column(ForeignKey("ledger_entries.id"), index=True)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
+    # The business day the money changed hands, as staff entered it.
+    business_date: Mapped[date] = mapped_column(Date)
+    method: Mapped[str] = mapped_column(String)
+    reference: Mapped[str] = mapped_column(String)
+    note: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    # The operation key of the request that recorded it: one entry per key, ever.
+    operation_id: Mapped[str] = mapped_column(String, unique=True)
+    recorded_at: Mapped[datetime] = mapped_column(UtcInstant)
+    actor_id: Mapped[str] = mapped_column(String)
+    actor_display_name: Mapped[str] = mapped_column(String)

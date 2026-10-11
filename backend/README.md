@@ -1,6 +1,6 @@
 # Food Reservations Backend
 
-The Python/FastAPI backend the [frontend](../frontend/README.md) targets. Phases B1 to B3 are delivered: staff can sign in with the interim `admin` token, sessions expire and can be signed out, business settings are served, the menu can be read and edited with version checks and durable operation keys, and orders can be quoted, saved, edited and confirmed, with a dashboard by business date. Fulfillment steps, cancellation and payments arrive with Phase B4; nothing after that exists yet. The [API contract](../frontend/docs/phase-0/API_CONTRACT.md) describes each area. Work is tracked in the [backend plan](BACKEND_IMPLEMENTATION_PLAN.md). This is a local project for now: it runs on the developer's machine only.
+The Python/FastAPI backend the [frontend](../frontend/README.md) targets. Phases B1 to B4 are delivered: staff can sign in with the interim `admin` token, sessions expire and can be signed out, business settings are served, the menu can be read and edited with version checks and durable operation keys, and orders can be quoted, saved, edited, taken through their fulfillment steps, cancelled, paid and refunded, with a dashboard by business date. Ingredients, purchases, recipes, planning and preparation do not exist yet. The [API contract](../frontend/docs/phase-0/API_CONTRACT.md) describes each area. Work is tracked in the [backend plan](BACKEND_IMPLEMENTATION_PLAN.md). This is a local project for now: it runs on the developer's machine only.
 
 ## Requirements and Setup
 
@@ -15,14 +15,14 @@ uv run food-admin setup-local
 
 - `uv sync` creates `.venv` with the versions pinned in `uv.lock`.
 - `.env` holds the local settings. It allows the session cookie over plain HTTP, which this machine needs and a hosted system must not have. Git ignores it.
-- `setup-local` creates `food-reservations.db` in this directory (git ignores it too), sets the `admin` token, creates provisional development settings with the menu and orders enabled, and seeds the provisional menu. It prints the token once: store it, because only a salted hash is kept. Running it again changes nothing.
+- `setup-local` creates `food-reservations.db` in this directory (git ignores it too), sets the `admin` token, creates provisional development settings with the menu, orders and payments enabled, and seeds the provisional menu. It prints the token once: store it, because only a salted hash is kept. Running it again changes nothing.
 
 The provisional settings and menu are the decision register's unconfirmed assumptions (USD, America/Los_Angeles, the five known menu rows). Nothing is confirmed, and the frontend labels it provisional. To choose your own values instead, run the steps separately before `setup-local`, or change them afterwards:
 
 ```powershell
 uv run food-admin migrate
 uv run food-admin token set
-uv run food-admin settings set --currency USD --minor-digits 2 --timezone America/Los_Angeles --fulfillment "pickup,delivery" --delivery-mode manual_amount --payment-methods "cash,bank_transfer,other" --enable menu --enable orders
+uv run food-admin settings set --currency USD --minor-digits 2 --timezone America/Los_Angeles --fulfillment "pickup,delivery" --delivery-mode manual_amount --payment-methods "cash,bank_transfer,other" --enable menu --enable orders --enable payments
 ```
 
 Keep the quotes around the comma-separated values: PowerShell otherwise splits them into separate arguments. `token set` asks twice for a token of at least 12 characters; `token set --generate` creates one and prints it once.
@@ -65,9 +65,10 @@ Rules worth knowing:
 - Every change raises the settings version by one. A command that changes nothing says so and leaves the version alone.
 - Changing a confirmed value withdraws that group's confirmation.
 - New settings start closed: delivery disabled, no payment methods, no workflows, nothing confirmed, environment `development`.
-- A workflow can be enabled only once this version of the server implements it. So far those are `menu` and `orders`. Orders need the menu enabled too, because the order editor reads it.
+- A workflow can be enabled only once this version of the server implements it. So far those are `menu`, `orders` and `payments`. Orders need the menu enabled too, because the order editor reads it, and payments need at least one payment method in the settings.
 - Orders created under development settings get references that start with `DEV-`; under live settings they start with `ORD-`.
 - Live settings take no orders until all five groups are confirmed, and sell only confirmed foods and variants.
+- Payments and refunds are entries in a ledger that is only ever added to. Do not enter real payments until a backup of the database file has been restored successfully once; that check belongs to Phase B8 and has not been done.
 - A staff edit that changes a confirmed food's name, or a confirmed variant's label, unit, package contents or price, makes it provisional again.
 - `operations close` is for one situation: the frontend reports a save it cannot resolve, its status check keeps answering "not found", and the draft is gone. Closing the key tells the frontend the save did not happen. If the original request arrives later it is refused.
 - With `--environment live`, work that depends on unconfirmed settings is refused, and the session cookie is always HTTPS-only whatever `.env` says.

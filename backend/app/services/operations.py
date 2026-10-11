@@ -45,7 +45,8 @@ def fingerprint(method: str, path: str, payload: object) -> str:
     ).hexdigest()
 
 
-def _key(request: Request) -> str:
+def key_of(request: Request) -> str:
+    """The request's operation key, checked: a UUID, compared without regard to letter case."""
     sent = request.headers.get("Idempotency-Key")
     if sent is None:
         raise invalid(FieldError(_HEADER, "required", "An operation identifier is required."))
@@ -68,7 +69,7 @@ def execute(
     request can never succeed. An identical repeat gets the stored answer without the change
     being looked at again.
     """
-    key = _key(request)
+    key = key_of(request)
     if not isinstance(payload, dict):
         raise invalid(FieldError("", "invalid_type", "Send a JSON object."))
     method, path = request.method, request.url.path

@@ -65,6 +65,16 @@ A code review of the delivered Phase 1-5 frontend found one defect in the status
 
 The financial draft is still never written to browser storage; the retained request lives in protected memory and is cleared by reload or the end of the session. The same change covers status transitions and cancellation, which share the dialog. Combined results after all review fixes are recorded in the [plan](../../FRONTEND_IMPLEMENTATION_PLAN.md#post-delivery-review-fixes). Committed on 2026-10-10 in the repository's initial commit.
 
+## Live Verification Against the Local Backend (2026-10-11)
+
+Backend Phase B4 delivered fulfillment steps, cancellation and the payment and refund ledger, so the Phase 4 screens were run in live mode against the real FastAPI server through the development proxy. One answer was deliberately dropped; nothing else was intercepted. The steps and results are in the [backend Phase B4 record](../../../backend/docs/phase-4/VERIFICATION.md#live-verification); the script is `.playwright/phase4-live.mjs`.
+
+Seen working in the browser: a deposit whose answer was lost, reconciled by "Check transaction status" to exactly one ledger entry; an edit that lowers the total, saved only after the customer credit was acknowledged; the credit refunded as a separate entry; an unpaid order taken through Start preparing, Mark ready and Complete order with their attestations; a duplicated payment request recorded once; cancellation after a deposit, leaving the deposit as credit; and the server's reason shown beside a disabled action. No frontend change was needed.
+
+Covered by the backend's own tests rather than the browser: two payments at the same moment, an edit overtaken by a payment, amounts over the limit, and refunds on completed orders. Printing was not exercised.
+
+Still open for this gate: agreement on the refined contract, the Phase 0 confirmations, a verified backup and restore before any real payment, printing on real devices, and a staff walkthrough. Nothing was run on Windows.
+
 ## Live Handoff
 
 - [ ] Close Phase 0 confirmations and the Phase 1-3 live gates; accept the refined status/ledger/history/operation schema with the backend maintainer.
