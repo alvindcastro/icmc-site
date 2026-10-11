@@ -1,6 +1,6 @@
 # Backend Implementation Plan
 
-Status: Draft written 2026-10-10. Phase B0's scaffold was delivered the same day ([verification record](docs/phase-0/VERIFICATION.md)); no contract endpoint is implemented and Phases B1-B8 are untouched. The frontend for Phases 1-6 exists and is verified only against development fixtures; this backend is what turns those fixtures into a real system. Scope decided 2026-10-10: this is a local project for now.
+Status: Draft written 2026-10-10. Phase B0's scaffold ([verification record](docs/phase-0/VERIFICATION.md)), Phase B1 ([verification record](docs/phase-1/VERIFICATION.md)) and Phase B2 ([verification record](docs/phase-2/VERIFICATION.md)) were delivered the same day: sign-in, sessions, CSRF, business settings, version checks, durable operation keys and the menu exist and were checked with the frontend in live mode. Phases B3-B8 are untouched, so the menu is the only workflow served yet. The frontend for Phases 1-7 exists and is otherwise verified only against development fixtures; this backend is what turns those fixtures into a real system. Scope decided 2026-10-10: this is a local project for now.
 
 Sources: [MVP checklist](../food_reservation_mvp_checklist.md), [API contract proposal](../frontend/docs/phase-0/API_CONTRACT.md), [decision register](../frontend/docs/phase-0/DECISIONS.md), [acceptance scenarios](../frontend/docs/phase-0/ACCEPTANCE.md), and the [frontend plan](../frontend/FRONTEND_IMPLEMENTATION_PLAN.md) with its open live completion gates.
 
@@ -60,15 +60,15 @@ This is the starting proposal, chosen to be the simplest thing that satisfies th
 
 Tick each when decided. The recommendation is the default if nobody objects.
 
-- [ ] D01 Database. Recommended: SQLite in WAL mode with foreign keys on, as the checklist says. Revisit PostgreSQL only if hosting or concurrent use requires it.
+- [x] D01 Database. Recommended: SQLite in WAL mode with foreign keys on, as the checklist says. Revisit PostgreSQL only if hosting or concurrent use requires it. Adopted 2026-10-10 as the stated default, by building Phase B1 on it; the owner was not asked separately and can still reverse it.
 - [x] D02 Where it runs. Decided 2026-10-10: the developer's own machine only, for now. The developer is the operator. Hosting, HTTPS and off-machine backups are deferred; see Local-Only Scope.
-- [ ] D03 Process model. Recommended: one application process behind the proxy while on SQLite.
-- [ ] D04 Persistence layer. Recommended: SQLAlchemy 2 with Alembic migrations.
-- [ ] D05 Number storage. Recommended: integer minor units for money, integer thousandths for ingredient quantities, decimal arithmetic for costs.
-- [ ] D06 Operation admission. Recommended: admit, apply and store the result in one transaction, so the `processing` state exists in the contract but is not normally observable.
-- [ ] D07 Session storage. Recommended: a sessions table keyed by a hash of the cookie value.
-- [ ] D08 Interim sign-in secret. Recommended: the operator sets the `admin` token by command; only a salted hash is stored; rotation is another command.
-- [ ] D09 Identifiers. Recommended: random opaque IDs with a short type prefix, plus a separate human-readable order reference and purchase reference sequence.
+- [x] D03 Process model. Recommended: one application process behind the proxy while on SQLite. Adopted 2026-10-10 as the stated default, by building Phase B1 on it; the owner was not asked separately and can still reverse it.
+- [x] D04 Persistence layer. Recommended: SQLAlchemy 2 with Alembic migrations. Adopted 2026-10-10 as the stated default, by building Phase B1 on it; the owner was not asked separately and can still reverse it. The lockfile resolves SQLAlchemy 2.1 and Alembic 1.20.
+- [x] D05 Number storage. Recommended: integer minor units for money, integer thousandths for ingredient quantities, decimal arithmetic for costs. Adopted 2026-10-10 as the stated default, by building Phase B1 on it; the owner was not asked separately and can still reverse it. The shared value types implement it; the first stored quantities arrive in Phase B5.
+- [x] D06 Operation admission. Recommended: admit, apply and store the result in one transaction, so the `processing` state exists in the contract but is not normally observable. Adopted 2026-10-10 as the stated default, by building Phase B2 on it; the owner was told it was next and can still reverse it.
+- [x] D07 Session storage. Recommended: a sessions table keyed by a hash of the cookie value. Adopted 2026-10-10 as the stated default, by building Phase B1 on it; the owner was not asked separately and can still reverse it.
+- [x] D08 Interim sign-in secret. Recommended: the operator sets the `admin` token by command; only a salted hash is stored; rotation is another command. Adopted 2026-10-10 as the stated default, by building Phase B1 on it; the owner was not asked separately and can still reverse it. The hash is scrypt from the standard library; rotation also ends open sessions.
+- [x] D09 Identifiers. Recommended: random opaque IDs with a short type prefix, plus a separate human-readable order reference and purchase reference sequence. Adopted 2026-10-10 as the stated default, by building Phase B1 on it; the owner was not asked separately and can still reverse it. IDs look like `usr_` plus 24 hex characters; the reference sequences arrive with orders and purchases.
 - [x] D10 Tooling. Decided 2026-10-10 by building the scaffold: Python 3.12, uv with a cross-platform `uv.lock`, ruff, mypy in strict mode and pytest.
 - [ ] D11 Contract refinements. Accept the frontend's Phase 2-6 refinements and the 2026-10-10 additions as written, or list the changes. This closes the two open agreement tasks in the frontend plan.
 - [ ] D12 Estimate status in the menu list. Either add a backend-derived estimate status per variant to the food list, or keep it on the recipe page only. Open question from frontend Phase 6.
@@ -92,7 +92,7 @@ Tick each when decided. The recommendation is the default if nobody objects.
 Purpose: Agree what is being built and create a project that can be run, tested and reviewed.
 
 - [ ] Review each [contract section](../frontend/docs/phase-0/API_CONTRACT.md) with the frontend maintainer and record accepted or changed items in the decision register. Tick the contract's Backend Agreement Checklist as each group is accepted.
-- [ ] Resolve decisions D01-D13 above.
+- [ ] Resolve decisions D01-D13 above. Eleven are settled. D11 is the owner's contract agreement, and D12 is needed by Phase B6.
 - [x] Scaffold the package: application factory, one router per area, services holding the business rules, persistence, request and response schemas, and settings read from the environment. The factory, settings and the `/api/v1` mount point exist; each area's router, services, persistence and schemas are added by the phase that needs them.
 - [x] Add dependency lockfile, linting, type checking and pytest, runnable with one command each.
 - [x] Add a CI workflow that runs the backend checks on every push. Consider adding the frontend type check and unit tests to the same workflow; neither has CI today. Both jobs are in `.github/workflows/ci.yml`; its first run, on the commit that added it, passed.
@@ -100,7 +100,7 @@ Purpose: Agree what is being built and create a project that can be run, tested 
 - [x] Write `backend/README.md`: setup, running in PyCharm, migrations, tests, environment variables, and how to run with the frontend. Migrations are described when the database arrives in Phase B1.
 - [x] Confirm the frontend's development proxy reaches the server: `npm run dev` in live mode forwards `/api` to `127.0.0.1:8000`.
 
-Ready to proceed: A blank application starts, tests run, and the first contract group is agreed. The first two are true as of 2026-10-10; agreement is still open.
+Ready to proceed: A blank application starts, tests run, and the first contract group is agreed. The first two are true as of 2026-10-10. The auth and settings group was built exactly as the contract proposes, with the clarifications recorded in it on 2026-10-10; the owner's formal agreement (D11) is still open.
 
 ## Phase B1: Foundation, Sessions and Settings
 
@@ -108,39 +108,39 @@ Purpose: Everything later phases stand on, plus a real sign-in. Contract: [share
 
 ### Application core
 
-- [ ] Configure the database connection: WAL mode, foreign keys on, a busy timeout, and write transactions that take the lock at the start. Create the baseline migration.
-- [ ] Give every request an ID and include it in the error envelope and the logs.
-- [ ] Implement the error envelope `{error: {code, message, request_id, field_errors, details}}` and adapt framework validation errors to it, with JSON Pointer paths such as `/draft/items/0/quantity` and `/query/page`.
-- [ ] Map malformed JSON to 400 `invalid_json`, unknown routes and records to 404 `not_found`, and unexpected failures to 500 `internal_error` with no traceback.
-- [ ] Build the shared value types with boundary tests: money (integer, zero to 9007199254740991), selling quantity (positive integer), ingredient quantity (decimal string, at most three decimals, whole numbers for pieces, no exponent or negative zero), nine-decimal unit cost, calendar date and UTC instant.
-- [ ] Build the list helper: `page` and `limit` validation (default 25, maximum 100), the `{items, page, limit, total, has_next}` shape, an empty 200 for an out-of-range page, and stable ordering with ID as the final tie-breaker.
-- [ ] Send `Cache-Control: no-store` on auth and protected responses, and make sure every response carries the standard `Date` header; the frontend uses it to judge deadlines.
-- [ ] Build the permitted-action helper `{allowed, reason_code, reason}`. A blocked action always has both a reason and a reason code.
+- [x] Configure the database connection: WAL mode, foreign keys on, a busy timeout, and write transactions that take the lock at the start. Create the baseline migration. Reads use a snapshot and are never blocked. `food-admin migrate` applies pending revisions in one transaction, a test fails if migrations and models disagree, and the server refuses to start on an unmigrated database.
+- [x] Give every request an ID and include it in the error envelope and the logs. It is also returned as `X-Request-ID`. The log line carries the path without its query string.
+- [x] Implement the error envelope `{error: {code, message, request_id, field_errors, details}}` and adapt framework validation errors to it, with JSON Pointer paths such as `/draft/items/0/quantity` and `/query/page`. A missing field is `required` and an unknown one `unknown_field`; no message repeats the submitted value.
+- [x] Map malformed JSON to 400 `invalid_json`, unknown routes and records to 404 `not_found`, and unexpected failures to 500 `internal_error` with no traceback. An unsupported method is 405 `method_not_allowed`. The traceback goes to the server log under the request ID, with statement parameters hidden.
+- [x] Build the shared value types with boundary tests: money (integer, zero to 9007199254740991), selling quantity (positive integer), ingredient quantity (decimal string, at most three decimals, whole numbers for pieces, no exponent or negative zero), nine-decimal unit cost, calendar date and UTC instant. Instants are stored and sent to the whole second.
+- [x] Build the list helper: `page` and `limit` validation (default 25, maximum 100), the `{items, page, limit, total, has_next}` shape, an empty 200 for an out-of-range page, and stable ordering with ID as the final tie-breaker. The paging model also refuses query parameters a list does not define. Its first real use is the Phase B2 menu.
+- [x] Send `Cache-Control: no-store` on auth and protected responses, and make sure every response carries the standard `Date` header; the frontend uses it to judge deadlines. Every `/api/` response is `no-store`. The `Date` header is uvicorn's: a test over a real socket proves there is exactly one, because a second copy from the application would be unreadable to the frontend.
+- [x] Build the permitted-action helper `{allowed, reason_code, reason}`. A blocked action always has both a reason and a reason code.
 
 ### Sessions, CSRF and sign-in
 
-- [ ] Create the sessions table: hashed session ID, user, CSRF token, created time, idle and absolute expiry, ended time. Pre-auth sessions are short-lived.
-- [ ] `GET /auth/csrf` works while signed out and returns a token bound to the pre-auth or current session, with no protected data.
-- [ ] `POST /auth/sign-in` accepts `{username, token}` exactly as entered, verifies in constant time against the stored hash, and answers a wrong pair with a generic 401 `invalid_credentials`. Blank values are 422 at `/username` or `/token`.
-- [ ] A successful sign-in rotates the session cookie and the CSRF token and returns `{user, csrf_token, idle_expires_at, absolute_expires_at}`.
-- [ ] Set the cookie as an opaque ID with `HttpOnly`, `Secure`, `SameSite=Lax` and `Path=/`. A plain-HTTP cookie is allowed only by an explicit development setting, which is the normal setting while the project is local.
-- [ ] `GET /auth/session` returns the session or 401, distinguishes `session_expired` from `unauthenticated`, and does not extend idle expiry.
-- [ ] Extend idle expiry on successful authenticated business requests, never past the absolute limit. Limits are 30 idle minutes and 12 absolute hours, configurable.
-- [ ] `POST /auth/sign-out` requires the CSRF token, ends the server session, clears the cookie and returns 204. An already-ended session also returns 204, so the frontend's "retry sign-out" can always finish.
-- [ ] Enforce CSRF token and approved Origin on every non-GET request, including sign-in and sign-out, with 403 `csrf_invalid`.
-- [ ] Rate-limit sign-in attempts with 429 `rate_limited` and a `Retry-After` header.
-- [ ] Provide the single pilot `admin` account with role `staff`, and operator commands to set and rotate its token. There is no registration endpoint.
-- [ ] If a separate development origin is ever used, allow only exact origins with credentials, the three request headers, and expose `Date`.
+- [x] Create the sessions table: hashed session ID, user, CSRF token, created time, idle and absolute expiry, ended time. Pre-auth sessions are short-lived. Pre-auth sessions last 15 minutes and are cleared away once over.
+- [x] `GET /auth/csrf` works while signed out and returns a token bound to the pre-auth or current session, with no protected data.
+- [x] `POST /auth/sign-in` accepts `{username, token}` exactly as entered, verifies in constant time against the stored hash, and answers a wrong pair with a generic 401 `invalid_credentials`. Blank values are 422 at `/username` or `/token`. An unknown username costs the same hashing work as a wrong token.
+- [x] A successful sign-in rotates the session cookie and the CSRF token and returns `{user, csrf_token, idle_expires_at, absolute_expires_at}`.
+- [x] Set the cookie as an opaque ID with `HttpOnly`, `Secure`, `SameSite=Lax` and `Path=/`. A plain-HTTP cookie is allowed only by an explicit development setting, which is the normal setting while the project is local. The cookie is `food_session`. The setting is `FOOD_API_COOKIE_SECURE=false`, and it is ignored once the business settings are `live`.
+- [x] `GET /auth/session` returns the session or 401, distinguishes `session_expired` from `unauthenticated`, and does not extend idle expiry.
+- [x] Extend idle expiry on successful authenticated business requests, never past the absolute limit. Limits are 30 idle minutes and 12 absolute hours, configurable. "Successful" is read as successfully authenticated: a business request that passes authentication counts as activity whatever its own outcome, so staff correcting a refused save are not signed out. The frontend's fixture behaves the same way and the contract now says so.
+- [x] `POST /auth/sign-out` requires the CSRF token, ends the server session, clears the cookie and returns 204. An already-ended session also returns 204, so the frontend's "retry sign-out" can always finish. The token is checked against the session the cookie names whatever its state, so the repeat is still protected.
+- [x] Enforce CSRF token and approved Origin on every non-GET request, including sign-in and sign-out, with 403 `csrf_invalid`. One guard on the API router covers every current and future route. A request with no `Origin` header is refused too.
+- [x] Rate-limit sign-in attempts with 429 `rate_limited` and a `Retry-After` header. Five failures in 15 minutes lock sign-in for the whole server, even for the right token, until the oldest failure leaves the window; a success clears the count. Counting per client address waits for hosting, when the proxy can supply one.
+- [x] Provide the single pilot `admin` account with role `staff`, and operator commands to set and rotate its token. There is no registration endpoint. `food-admin token set` and `food-admin token rotate`; tokens are at least 12 characters, or generated.
+- [ ] If a separate development origin is ever used, allow only exact origins with credentials, the three request headers, and expose `Date`. Not needed so far: the development proxy keeps the browser on one origin, so no cross-origin support was added.
 
 ### Business settings
 
-- [ ] Create the single settings record with a version and return the contract shape from `GET /settings`.
-- [ ] Add operator commands to set currency and minor digits, timezone (validated as a real zone), fulfillment methods, pickup location, delivery policy, tax policy, payment methods, capabilities and environment. Each change increases the settings version.
-- [ ] Add a separate operator command to confirm currency, timezone, fulfillment, delivery and tax, recording when. Nothing is confirmed by default.
-- [ ] In the live environment, fail closed: reservation and financial mutations return 409 `settings_unconfirmed` until the relevant confirmations are true.
-- [ ] Start with every capability off and enable each only when its backend phase is released.
+- [x] Create the single settings record with a version and return the contract shape from `GET /settings`. Until the operator creates the record the answer is 503 `temporarily_unavailable`; nothing is served from built-in defaults.
+- [x] Add operator commands to set currency and minor digits, timezone (validated as a real zone), fulfillment methods, pickup location, delivery policy, tax policy, payment methods, capabilities and environment. Each change increases the settings version. `food-admin settings set` and `settings show`. A command that changes nothing leaves the version alone.
+- [x] Add a separate operator command to confirm currency, timezone, fulfillment, delivery and tax, recording when. Nothing is confirmed by default. `food-admin settings confirm`. Changing a confirmed value withdraws that group's confirmation.
+- [x] In the live environment, fail closed: reservation and financial mutations return 409 `settings_unconfirmed` until the relevant confirmations are true. The guard is built and tested with a stand-in mutation, and names the unconfirmed groups in `details`. No reservation or financial mutation exists yet; Phase B3 applies it to quotes and saves.
+- [x] Start with every capability off and enable each only when its backend phase is released. The server holds the set of released workflows: empty in Phase B1, `menu` since Phase B2. One outside it can be neither enabled nor reported as on.
 
-Completion check: Against the real server, sign in by keyboard, let a session expire, sign out with and without a lost response, try a wrong token, and return to a protected route. Tick the frontend Phase 1 live items.
+Completion check: Against the real server, sign in by keyboard, let a session expire, sign out with and without a lost response, try a wrong token, and return to a protected route. Tick the frontend Phase 1 live items. Done on 2026-10-10 against the local server through the development proxy; see the [verification record](docs/phase-1/VERIFICATION.md). The frontend's Phase 1 gate stays unticked because it also asks for the business confirmations and a staff walkthrough.
 
 ## Phase B2: Versions, Durable Operations and Menu
 
@@ -148,37 +148,37 @@ Purpose: The two safety mechanisms every later mutation uses, proven on the menu
 
 ### Version preconditions
 
-- [ ] Build one helper that compares `expected_version` and increments the version inside the write transaction. Each successful mutation increments by exactly one; the frontend verifies this.
-- [ ] Answer a stale version with 409 `version_conflict` and `details: {resource_type, resource_id, expected_version, current_version, latest_resource}`, where `latest_resource` is the complete current record with its permitted actions. A missing version is a 422 field error.
+- [x] Build one helper that compares `expected_version` and increments the version inside the write transaction. Each successful mutation increments by exactly one; the frontend verifies this. It is `advance` in `app/services/versions.py`.
+- [x] Answer a stale version with 409 `version_conflict` and `details: {resource_type, resource_id, expected_version, current_version, latest_resource}`, where `latest_resource` is the complete current record with its permitted actions. A missing version is a 422 field error. Field validation is reported before versions are compared, as the fixture does.
 
 ### Operation protocol
 
-- [ ] Create the operations table: key, method, path, fingerprint, state, resource type and ID, stored status and body, stored error, started and completed times.
-- [ ] Require `Idempotency-Key` on every mutation the contract lists, with 422 when it is missing. Quotes, previews and recipe saves do not use keys.
-- [ ] Fingerprint each request as method, path and canonical JSON body. Cookies and CSRF tokens are not part of it.
-- [ ] Commit the operation record, the business effects and the stored success response in the same transaction.
-- [ ] Replay an identical completed request with its stored status and body and `Idempotency-Replayed: true`, before re-checking versions or expired quotes.
-- [ ] Store terminal validation and conflict rejections as `rejected`, so a delayed copy of the same request can never succeed later.
-- [ ] Answer the same key with a different fingerprint with 409 `operation_payload_mismatch`, and an identical request still in flight with 409 `operation_in_progress` and `Retry-After`.
-- [ ] `GET /operations/{operation_id}` requires authorization and returns `{operation_id, state, resource_type, resource_id, result, error, started_at, completed_at}` with fields irrelevant to the state set to null. An unknown key is 404.
-- [ ] Never expire operation records while the business record exists, and include them in backups.
-- [ ] Add operator commands to list unresolved keys and to close an unknown key as rejected with a reason. The frontend blocks an area when a browser holds a key the server has never seen; this is the only way to unblock it after the draft is lost.
-- [ ] Test the protocol directly: lost response then replay, changed body, two identical requests at once producing one effect, and a failure midway leaving no partial effect.
+- [x] Create the operations table: key, method, path, fingerprint, state, resource type and ID, stored status and body, stored error, started and completed times. One column holds the answer exactly as sent, success or error, beside its HTTP status.
+- [x] Require `Idempotency-Key` on every mutation the contract lists, with 422 when it is missing. Quotes, previews and recipe saves do not use keys. The field error is at `/header/Idempotency-Key`. The key must be a UUID, as the contract defines it; letter case is ignored.
+- [x] Fingerprint each request as method, path and canonical JSON body. Cookies and CSRF tokens are not part of it. Key order and spacing in the body do not matter.
+- [x] Commit the operation record, the business effects and the stored success response in the same transaction. This is decision D06: a `processing` record is never left behind, so a crash leaves nothing and the lookup always tells the truth.
+- [x] Replay an identical completed request with its stored status and body and `Idempotency-Replayed: true`, before re-checking versions or expired quotes. The replay is byte-identical.
+- [x] Store terminal validation and conflict rejections as `rejected`, so a delayed copy of the same request can never succeed later. Every 4xx raised by the change is stored, including a 404 for a missing record, after a savepoint undoes whatever the change had written. Refusals before the change is attempted (session, CSRF, capability, malformed JSON, a missing or malformed key) are not recorded.
+- [x] Answer the same key with a different fingerprint with 409 `operation_payload_mismatch`, and an identical request still in flight with 409 `operation_in_progress` and `Retry-After`. With D06 an identical request in flight simply waits for the write lock and is then replayed; `operation_in_progress` is answered only if a `processing` record exists. A write that cannot get the lock within the busy timeout is 503 `temporarily_unavailable` with `Retry-After`.
+- [x] `GET /operations/{operation_id}` requires authorization and returns `{operation_id, state, resource_type, resource_id, result, error, started_at, completed_at}` with fields irrelevant to the state set to null. An unknown key is 404. A signed-in session is enough; lookups are not tied to a workflow.
+- [x] Never expire operation records while the business record exists, and include them in backups. Nothing deletes them, and they live in the same database file as everything else, so a copy of the file includes them. Scheduled backups are Phase B8.
+- [x] Add operator commands to list unresolved keys and to close an unknown key as rejected with a reason. The frontend blocks an area when a browser holds a key the server has never seen; this is the only way to unblock it after the draft is lost. `food-admin operations unresolved` and `food-admin operations close <key> --reason`. A closed key answers `rejected` with code `operation_closed`, and the original request is refused if it ever arrives.
+- [x] Test the protocol directly: lost response then replay, changed body, two identical requests at once producing one effect, and a failure midway leaving no partial effect. See `tests/test_operations.py`.
 
 ### Menu
 
-- [ ] Create categories and serve `GET /categories`, paginated, name ascending. Categories are operator-managed; the contract has no category editing.
-- [ ] Create foods and variants and serve `GET /foods` with `q`, `category_id` and `available` filters, name ascending, and `GET /foods/{id}`. The `available` filter applies to foods; unavailable variants stay in the response.
-- [ ] `POST /foods` and `PATCH /foods/{id}`: trimmed non-blank name up to 200 characters, existing category, description up to 2000 characters returned as an empty string when absent. New records are `provisional`.
-- [ ] `POST /foods/{id}/variants` and `PATCH /variants/{id}`: label rules, selling unit `tray|piece|stick|package`, non-negative price including an explicit zero, and package contents required for packages and null otherwise.
-- [ ] Advance the parent food's version together with the variant's version, atomically, whenever a variant is added or edited.
-- [ ] Refuse to change a variant's selling unit or package contents once it has been used on an order.
-- [ ] Add an audited operator command to confirm a food or variant. A later change to its name, unit, package contents or price resets it to provisional.
-- [ ] Return `permitted_actions` for foods (`edit`, `add_variant`) and variants (`edit`). Keep `recipe_id` null until Phase B6.
-- [ ] Add a development seed with the provisional transcription rows from the decision register. Do not invent the Pork BBQ options, and do not seed live data.
-- [ ] Add a local setup command that creates the database, sets a local `admin` token, loads provisional development settings, and seeds the provisional menu, so the project runs locally after one command.
+- [x] Create categories and serve `GET /categories`, paginated, name ascending. Categories are operator-managed; the contract has no category editing. `food-admin category add` and `category list`. Names are unique and ordered without regard to letter case.
+- [x] Create foods and variants and serve `GET /foods` with `q`, `category_id` and `available` filters, name ascending, and `GET /foods/{id}`. The `available` filter applies to foods; unavailable variants stay in the response. Search and ordering ignore letter case; `%` and `_` in the search text are literal. `available` accepts only `true` or `false`, and an unknown `category_id` is a field error.
+- [x] `POST /foods` and `PATCH /foods/{id}`: trimmed non-blank name up to 200 characters, existing category, description up to 2000 characters returned as an empty string when absent. New records are `provisional`. A PATCH changes only the fields it sends; an explicit null for a field that cannot be empty is a field error.
+- [x] `POST /foods/{id}/variants` and `PATCH /variants/{id}`: label rules, selling unit `tray|piece|stick|package`, non-negative price including an explicit zero, and package contents required for packages and null otherwise. The package rule is checked against the variant as it would be after the edit.
+- [x] Advance the parent food's version together with the variant's version, atomically, whenever a variant is added or edited.
+- [x] Refuse to change a variant's selling unit or package contents once it has been used on an order. The variant carries a `used_on_order` flag, which Phase B3 sets when it saves the first order line.
+- [x] Add an audited operator command to confirm a food or variant. A later change to its name, unit, package contents or price resets it to provisional. `food-admin menu confirm food|variant <id> --version N` confirms exactly the version that was reviewed and raises it by one; `food-admin menu show` lists IDs and versions. Confirmations and resets are written to an append-only audit table. An edit that leaves the material values unchanged keeps the confirmation.
+- [x] Return `permitted_actions` for foods (`edit`, `add_variant`) and variants (`edit`). Keep `recipe_id` null until Phase B6.
+- [x] Add a development seed with the provisional transcription rows from the decision register. Do not invent the Pork BBQ options, and do not seed live data. `food-admin menu seed` fills only an empty menu and refuses live settings.
+- [x] Add a local setup command that creates the database, sets a local `admin` token, loads provisional development settings, and seeds the provisional menu, so the project runs locally after one command. `food-admin setup-local`. It keeps whatever already exists, prints a generated token once, and refuses live settings.
 
-Completion check: Create and edit a food with several variants from two browsers, force a version conflict, lose a response and recover it by status check. Tick the frontend Phase 2 live items.
+Completion check: Create and edit a food with several variants from two browsers, force a version conflict, lose a response and recover it by status check. Tick the frontend Phase 2 live items. Done on 2026-10-10 against the local server; see the [verification record](docs/phase-2/VERIFICATION.md). The frontend's Phase 2 gate stays unticked because it also needs the menu confirmations B06-B08 and a staff walkthrough.
 
 ## Phase B3: Orders, Quotes and Dashboard
 

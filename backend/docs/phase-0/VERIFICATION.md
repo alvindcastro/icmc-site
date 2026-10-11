@@ -42,7 +42,7 @@ Resolved versions in the lockfile include FastAPI 0.143.0, Starlette 1.7.0, Pyda
 ## Still Open in Phase B0
 
 - [ ] Review each contract section and record what is accepted or changed (decision D11). This is the owner's decision and closes the two agreement tasks in the frontend plan.
-- [ ] Resolve the remaining decisions: D01 and D03-D09 before Phase B1 and B2 build on them, and D12 before Phase B6.
+- [ ] Resolve the remaining decisions: D01 and D03-D09 before Phase B1 and B2 build on them, and D12 before Phase B6. Update, 2026-10-10: Phase B1 adopted the stated defaults for D01, D03-D05 and D07-D09 by building on them; D06, D11 and D12 remain. See the [Phase B1 record](../phase-1/VERIFICATION.md).
 
 ## Entry Points
 

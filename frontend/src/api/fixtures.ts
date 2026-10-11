@@ -60,7 +60,7 @@ export function createFixtureTransport(options: { latency?: number; samples?: bo
       }
       if (path === '/api/v1/auth/csrf' && method === 'GET') return json({ csrf_token: csrfToken });
       if (!['GET', 'HEAD'].includes(method) && new Headers(init?.headers).get('X-CSRF-Token') !== csrfToken) {
-        return failure(403, 'csrf_invalid', 'Refresh the sign-in token and try again.');
+        return failure(403, 'csrf_invalid', 'The security token for this page is out of date. Try again.');
       }
       if (path === '/api/v1/auth/sign-in' && method === 'POST') {
         const body = JSON.parse(String(init?.body));

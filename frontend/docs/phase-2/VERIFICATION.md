@@ -39,7 +39,7 @@ Additional passing regression tests cover disabled capability/no requests, exact
 - [x] Keyboard dialog focus trapping/return, dirty close/discard, and 200% text zoom checked.
 - [x] Protected draft cleanup, late response isolation, no automatic mutation replay, and unresolved-operation blocking checked.
 - [x] Actual fixture preview at `http://127.0.0.1:5173/menu`, without API interception: admin/token login, food creation, tray/package variants, price and food/variant availability edits, search, phone editor, and sign-out passed without browser errors. Desktop/phone/editor screenshots were captured and reviewed.
-- [ ] Actual FastAPI persistence/auth/CSRF/authorization, durable deduplication/lookups, used selling-identity restrictions, confirmation resetting, and staff walkthrough.
+- [ ] Actual FastAPI persistence/auth/CSRF/authorization, durable deduplication/lookups, used selling-identity restrictions, confirmation resetting, and staff walkthrough. All but the staff walkthrough were verified on 2026-10-10; see [Live Verification](#live-verification-against-the-local-backend-2026-10-10).
 - [ ] Business currency, menu transcription/package-rule confirmations, and backend agreement on the refined contract.
 
 Browser tests intercept requests with deterministic development responses; they do not prove live authorization, transactions, persistence, or duplicate prevention. Historical order snapshots cannot be verified until Phase 3.
@@ -53,6 +53,18 @@ A code review of the delivered Phase 1-5 frontend found one menu defect. The fix
 | Unresolved save after its editor closes | Escape during an unconfirmed food save closed the editor with no confirmation. The request was discarded, so a save that never reached the server left every menu action blocked behind a lookup that could only return 404 | Closing asks for confirmation and Keep editing returns to the frozen draft. After discarding, the exact request stays in memory; Check previous save followed by Retry original save sends the same key and body once more, confirms the food and clears the marker. |
 
 This supersedes the plan-review note above that a missing result after draft loss always needs operator reconciliation: that now applies only after a reload or the end of the session, which clear the in-memory request. Browser storage still holds only the operation UUID. Combined results after all review fixes are recorded in the [plan](../../FRONTEND_IMPLEMENTATION_PLAN.md#post-delivery-review-fixes). Committed on 2026-10-10 in the repository's initial commit.
+
+## Live Verification Against the Local Backend (2026-10-10)
+
+Backend Phase B2 delivered the menu with version checks and durable operation keys, so the Phase 2 screens were run in live mode against the real FastAPI server through the development proxy, with no interception except one deliberately dropped answer. The steps and results are in the [backend Phase B2 record](../../../backend/docs/phase-2/VERIFICATION.md#live-verification); the script is `.playwright/phase2-live.mjs`.
+
+Seen working in the browser: the seeded provisional menu, creating a food with tray, package and zero-price piece variants, a price edit kept across reload, a version conflict between two browsers with the draft kept and resolved by "Keep draft with reviewed version", a save whose answer was lost and then settled by "Check save status" with exactly one version step on the server, server-side search with its no-results state, and a 375-pixel phone. No frontend change was needed.
+
+Covered by the backend's own tests rather than the browser: the restriction on a variant's unit and package contents after use on an order, confirmation by the operator and its reset on a material change, and the operator closing a key the server never saw.
+
+Two differences from the fixture, both recorded in the contract: the server requires the operation key to be a UUID, which the frontend always sends, and it withdraws a confirmation only when a material value changes, where the fixture does so on every edit.
+
+Still open for this gate: agreement on the refined contract, the currency and menu confirmations (B01, B06-B08), and a staff walkthrough. Nothing was run on Windows.
 
 ## Entry Points
 

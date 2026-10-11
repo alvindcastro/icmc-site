@@ -24,7 +24,7 @@ The fixture transport supports auth/session/settings, menu categories/foods/vari
 
 ## Live Backend Configuration
 
-Default `npm run dev` uses live requests to `/api/v1` and proxies `/api` to `http://127.0.0.1:8000`. Optional `.env.local` settings:
+Default `npm run dev` uses live requests to `/api/v1` and proxies `/api` to `http://127.0.0.1:8000`. The [backend](../backend/README.md) implements sign-in, sessions, business settings and the menu so far: follow its setup, start it on port 8000, and `npm run dev` signs in as `admin` with the token its setup command printed. The workspace then offers the menu and no other workflow, because the backend has released none; use `npm run dev:fixtures` to work on the other areas. Optional `.env.local` settings:
 
 ```dotenv
 VITE_API_MODE=live
@@ -62,7 +62,7 @@ npm exec -- playwright install chromium
 npm run test:e2e
 ```
 
-`npm run test:watch` runs the behavioral tests interactively. Playwright starts/stops its own live-mode Vite server on port 4173; that port must be free. It intercepts API requests with deterministic development responses. Screenshots, a print PDF and failure traces are generated in ignored `test-results/`. The 73 browser checks cover the foundation, menu, reservations, snapshots, dashboard, filters/scroll return, fulfillment, financial review/credit/refunds, ingredients/purchases/stock links, recipes/estimates, planning, preparation recording and corrections, expiry/recovery, protected printing, focus/discard/history protection, 320/375/768/1280-pixel layouts, long text and 200% text zoom. The full Vitest suite contains 380 passing tests across 33 files.
+`npm run test:watch` runs the behavioral tests interactively. Playwright starts/stops its own live-mode Vite server on port 4173; that port must be free. It intercepts API requests with deterministic development responses. Screenshots, a print PDF and failure traces are generated in ignored `test-results/`. The 73 browser checks cover the foundation, menu, reservations, snapshots, dashboard, filters/scroll return, fulfillment, financial review/credit/refunds, ingredients/purchases/stock links, recipes/estimates, planning, preparation recording and corrections, expiry/recovery, protected printing, focus/discard/history protection, 320/375/768/1280-pixel layouts, long text and 200% text zoom. The full Vitest suite contains 382 passing tests across 33 files.
 
 Build output is `dist/`. `npm run preview` serves the built application but does not supply a backend; use a same-origin API reverse proxy for live integration. The [Phase 1](docs/phase-1/VERIFICATION.md), [Phase 2](docs/phase-2/VERIFICATION.md), [Phase 3](docs/phase-3/VERIFICATION.md), [Phase 4](docs/phase-4/VERIFICATION.md), [Phase 5](docs/phase-5/VERIFICATION.md), [Phase 6](docs/phase-6/VERIFICATION.md), and [Phase 7](docs/phase-7/VERIFICATION.md) records contain observed red/green results and outstanding live checks; Phases 1-5 each have a section for the 2026-10-10 review fixes summarised in [the implementation plan](FRONTEND_IMPLEMENTATION_PLAN.md#post-delivery-review-fixes).
 

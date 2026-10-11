@@ -26,7 +26,8 @@ export function createApiClient(options: { baseUrl: string; transport?: FetchTra
     controllers.add(controller);
     const headers = new Headers({ Accept: 'application/json' });
     if (request.body !== undefined) headers.set('Content-Type', 'application/json');
-    if (mutation && csrfToken) headers.set('X-CSRF-Token', csrfToken);
+    const sentToken = mutation ? csrfToken : null;
+    if (sentToken) headers.set('X-CSRF-Token', sentToken);
     if (request.operationId) headers.set('Idempotency-Key', request.operationId);
     try {
       const response = await transport(`${options.baseUrl}${path}`, {
@@ -44,6 +45,8 @@ export function createApiClient(options: { baseUrl: string; transport?: FetchTra
       if (!response.ok) {
         const error = payload?.error;
         const code = typeof error?.code === 'string' ? error.code : 'request_failed';
+        // A refused token is useless: forget it so the next attempt fetches a fresh one. Nothing is resent here.
+        if (code === 'csrf_invalid' && csrfToken === sentToken) csrfToken = null;
         if (response.status === 401 && code !== 'invalid_credentials') {
           expiredHandlers.forEach(handler => handler());
         }

@@ -87,6 +87,16 @@ Settings response: `{version, environment, confirmation, currency, minor_digits,
 
 `delivery_policy = {mode: "manual_amount"|"fixed_amount"|"disabled", fixed_charge_minor: integer|null}`. Proposed `tax_policy = {mode: "manual_amount", inclusive: false}`; B05 may change it before live agreement. `payment_methods` is the permitted enum subset of `cash`, `bank_transfer`, `other`. `capabilities` has booleans `orders`, `menu`, `payments`, `inventory`, `purchases`, `recipes`, `planning`, `preparation_recording`. The backend enables only released workflows. Unconfirmed development settings must be visibly labeled provisional; live endpoints fail closed rather than use fixture defaults.
 
+Backend refinement (2026-10-10), from implementing this section in backend Phase B1. None of it changes a request or response shape.
+
+- Idle renewal: a business request that passes authentication renews idle expiry whatever its own outcome, including a refused save. Requests under `/auth` never renew it.
+- `GET /settings` returns 503 `temporarily_unavailable` until an operator has created the settings record; no defaults are served. `capabilities` reports a workflow as on only when it is enabled and implemented by the running backend.
+- `csrf_invalid` (403) is returned for a missing or wrong token, a token whose pre-auth session has ended (they last 15 minutes), an unapproved `Origin`, and a mutation with no `Origin` header. The frontend forgets a refused token and fetches a new one on the next explicit attempt; it never resends on its own. A mutation on an expired session that carries that session's own token is 401 `session_expired`, not 403.
+- Sign-out returns 204 for a session that is already ended or expired, provided the CSRF token is that session's.
+- Sign-in is locked with 429 `rate_limited` and `Retry-After` (seconds) after five failures in 15 minutes, counted for the whole backend; while locked, the right token is refused too.
+- The session cookie is `food_session`, with no lifetime of its own. It is always `Secure` when `environment` is `live`.
+- Every response carries `X-Request-ID`, equal to `error.request_id` on failures. An unknown query parameter is 422 at `/query/<name>` on every route. Instants are given to the whole second. Field errors use `required` for a missing or blank value and `unknown_field` for a property or query parameter the route does not define.
+
 If a separate development API origin is needed, allow exact frontend origins, credentials, and headers `Content-Type`, `X-CSRF-Token`, `Idempotency-Key`, and expose the `Date` response header (`Access-Control-Expose-Headers: Date`); no wildcard credentialed origin. This follows the [FastAPI CORS documentation](https://fastapi.tiangolo.com/tutorial/cors/). Cookie behavior follows [MDN Set-Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie).
 
 ## Versions and Conflict Handling
@@ -116,6 +126,15 @@ An identical completed request returns its recorded HTTP status/body, with `Idem
 
 If expiry has cleared the protected draft and lookup is 404, stop and require backend/operator reconciliation of that key before accepting a replacement. Backend recovery must determine whether an admitted `processing` request committed and durably close it; a client timeout is not sufficient evidence of rejection. Retain operation IDs/fingerprints/results for at least the associated business record's lifetime, including archive/backup; no short deduplication expiry.
 
+Backend refinement (2026-10-10), from implementing this section in backend Phase B2. None of it changes a request or response shape.
+
+- An operation key must be a UUID in its usual hyphenated form; letter case is ignored. A missing or malformed key is 422 at `/header/Idempotency-Key`.
+- What is recorded under a key is every outcome of the change itself: success, and any 4xx it produces, including validation, conflict and a missing record. A refusal before the change is attempted is not recorded and leaves the key unknown: an ended session, a CSRF or capability refusal, malformed JSON, a body that is not a JSON object.
+- The record, the change and the stored answer commit together, so `processing` is not normally observable: an identical request sent while the first is running waits and then receives the replay. `operation_in_progress` remains possible in principle.
+- A write that cannot start within the backend's busy timeout is 503 `temporarily_unavailable` with `Retry-After`; nothing is recorded, so a status check answers 404.
+- An operator can close a key the backend never saw. The lookup then answers `rejected` with HTTP status 409 and code `operation_closed`, and the message carries the operator's reason. The original request is refused if it arrives later.
+- A rejected operation has null `resource_type` and `resource_id`. Operation lookups need a signed-in session and no particular capability.
+
 Frontend refinement (2026-10-10), no backend change: closing an editor whose save is still unresolved requires confirmation, and the exact request (key, method, path, body) is retained in protected memory, never in browser storage. The page-level status check can therefore still offer the identical-key/body retry after a 404 once the editor is closed. A reload or the end of the session clears that request; the previous paragraph then applies.
 
 ## Menu (Phase 2)
@@ -137,6 +156,15 @@ Phase 2 menu recovery uses explicit read-only Check save status/Check previous s
 | `PATCH /foods/{id}` | `{expected_version}` plus changed editable fields, operation key | 200 Food; no hard delete |
 | `POST /foods/{id}/variants` | `{label, selling_unit, price_minor, available, package_contents}`, operation key | 201 Variant |
 | `PATCH /variants/{id}` | `{expected_version}` plus changed variant fields, operation key | 200 Variant; sellable-unit/package identity immutable once used on an order |
+
+Backend refinement (2026-10-10), from implementing this section in backend Phase B2. None of it changes a request or response shape.
+
+- Every menu route, reading included, is 403 `action_forbidden` unless the `menu` capability is enabled.
+- A PATCH changes only the fields it sends. An explicit null for a field that cannot be empty is a field error, and an edit that changes nothing still advances the version. Checks run in this order: the shape of the body, a missing record (404), rules that depend on the record, then the version (409).
+- The package rule is judged on the variant as it would be after the edit: a missing piece count is reported at `/package_contents/quantity`, and contents on a unit that is not a package at `/package_contents`. A change of unit or contents after use on an order is reported at `/selling_unit` or `/package_contents/quantity` with code `immutable_after_order`. An unknown category is `unknown_category`, at `/category_id` or `/query/category_id`.
+- `available` in the query accepts only `true` or `false`. Search and name ordering ignore letter case; `%` and `_` in search text are literal.
+- Confirmation is recorded against the version the operator reviewed and advances that version (and the food's, for a variant). Only a change to a material value withdraws it: a food's name, or a variant's label, unit, package contents or price.
+- Categories are unique by name without regard to letter case and are added by the operator.
 
 Confirmation is an audited backend/operator step after B06-B08 review, outside the pilot editor. A confirmed variant's material name/unit/package/price changes reset its confirmation until revalidated; already-saved order snapshots do not change. Unavailable food hides its variants from new selection even if a variant itself is available. Existing unavailable lines remain readable and may retain/decrease quantity or change notes; adding/increasing/swapping requires a currently available and confirmed variant in live mode.
 

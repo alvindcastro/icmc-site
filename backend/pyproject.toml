@@ -4,10 +4,16 @@ version = "0.1.0"
 description = "FastAPI backend for the food reservations staff workspace"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.14",
     "fastapi>=0.115",
     "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0.36",
+    "tzdata>=2024.2",
     "uvicorn[standard]>=0.32",
 ]
+
+[project.scripts]
+food-admin = "app.cli:main"
 
 [dependency-groups]
 dev = [
