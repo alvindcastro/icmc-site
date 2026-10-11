@@ -119,8 +119,7 @@ def variant_out(variant: Variant) -> VariantOut:
             "available": variant.available,
             "confirmation_status": variant.confirmation_status,
             "package_contents": contents,
-            # Recipes arrive in a later phase.
-            "recipe_id": None,
+            "recipe_id": variant.recipe.id if variant.recipe is not None else None,
             "permitted_actions": {"edit": allowed()},
         }
     )

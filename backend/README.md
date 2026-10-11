@@ -1,6 +1,6 @@
 # Food Reservations Backend
 
-The Python/FastAPI backend the [frontend](../frontend/README.md) targets. Phases B1 to B5 are delivered: staff can sign in with the interim `admin` token, sessions expire and can be signed out, business settings are served, the menu can be read and edited with version checks and durable operation keys, orders can be quoted, saved, edited, taken through their fulfillment steps, cancelled, paid and refunded, with a dashboard by business date, and ingredients can be kept with their stock movements, purchases and price history. Recipes, planning and preparation do not exist yet. The [API contract](../frontend/docs/phase-0/API_CONTRACT.md) describes each area. Work is tracked in the [backend plan](BACKEND_IMPLEMENTATION_PLAN.md). This is a local project for now: it runs on the developer's machine only.
+The Python/FastAPI backend the [frontend](../frontend/README.md) targets. Phases B1 to B7 are delivered: staff can sign in with the interim `admin` token, sessions expire and can be signed out, business settings are served, the menu can be read and edited with version checks and durable operation keys, orders can be quoted, saved, edited, taken through their fulfillment steps, cancelled, paid and refunded, with a dashboard by business date, ingredients can be kept with their stock movements, purchases and price history, each menu variant can have a recipe with an ingredient cost estimate taken from the latest purchases, a period can be planned into what to cook and what to buy, and what was cooked can be recorded against orders and stock, with corrections. Every area of the contract is now served. The [API contract](../frontend/docs/phase-0/API_CONTRACT.md) describes each area. Work is tracked in the [backend plan](BACKEND_IMPLEMENTATION_PLAN.md). This is a local project for now: it runs on the developer's machine only.
 
 ## Requirements and Setup
 
@@ -15,14 +15,14 @@ uv run food-admin setup-local
 
 - `uv sync` creates `.venv` with the versions pinned in `uv.lock`.
 - `.env` holds the local settings. It allows the session cookie over plain HTTP, which this machine needs and a hosted system must not have. Git ignores it.
-- `setup-local` creates `food-reservations.db` in this directory (git ignores it too), sets the `admin` token, creates provisional development settings with every workflow the server has enabled, and seeds the provisional menu. It prints the token once: store it, because only a salted hash is kept. Running it again changes nothing.
+- `setup-local` creates `food-reservations.db` in this directory (git ignores it too), sets the `admin` token, creates provisional development settings with every workflow enabled except preparation recording, and seeds the provisional menu. It prints the token once: store it, because only a salted hash is kept. Running it again changes nothing.
 
 The provisional settings and menu are the decision register's unconfirmed assumptions (USD, America/Los_Angeles, the five known menu rows). Nothing is confirmed, and the frontend labels it provisional. To choose your own values instead, run the steps separately before `setup-local`, or change them afterwards:
 
 ```powershell
 uv run food-admin migrate
 uv run food-admin token set
-uv run food-admin settings set --currency USD --minor-digits 2 --timezone America/Los_Angeles --fulfillment "pickup,delivery" --delivery-mode manual_amount --payment-methods "cash,bank_transfer,other" --enable menu --enable orders --enable payments --enable inventory --enable purchases
+uv run food-admin settings set --currency USD --minor-digits 2 --timezone America/Los_Angeles --fulfillment "pickup,delivery" --delivery-mode manual_amount --payment-methods "cash,bank_transfer,other" --enable menu --enable orders --enable payments --enable inventory --enable purchases --enable recipes --enable planning
 ```
 
 Keep the quotes around the comma-separated values: PowerShell otherwise splits them into separate arguments. `token set` asks twice for a token of at least 12 characters; `token set --generate` creates one and prints it once.
@@ -57,6 +57,8 @@ The contract has no endpoints for these. Whoever runs the server uses `uv run fo
 | `menu show` | Lists foods and variants with their IDs, versions and confirmation status. |
 | `menu confirm food\|variant <id> --version N` | Records that you reviewed version N and it is correct. The record becomes `confirmed` at version N+1. |
 | `menu seed` | Fills an empty development menu with the provisional rows. Refuses live settings. |
+| `preparation status` | Says whether preparation recording is on, and lists the open orders still tracked by hand with their numbered lines. |
+| `preparation baseline <reference> --reason "..."` | Brings one open order into recording. `--prepared LINE=QUANTITY` (repeatable) says how many of a line are already cooked; lines not named start at nothing; `--all` means every line is done. Moves no stock. See [Turning Preparation Recording On](#turning-preparation-recording-on). |
 | `operations unresolved` | Lists keyed saves that were admitted and never finished. Normally there are none. |
 | `operations close <key> --reason "..."` | Records a key the server never saw as rejected, so a browser stuck on that key can move on. |
 
@@ -65,14 +67,54 @@ Rules worth knowing:
 - Every change raises the settings version by one. A command that changes nothing says so and leaves the version alone.
 - Changing a confirmed value withdraws that group's confirmation.
 - New settings start closed: delivery disabled, no payment methods, no workflows, nothing confirmed, environment `development`.
-- A workflow can be enabled only once this version of the server implements it. So far those are `menu`, `orders`, `payments`, `inventory` and `purchases`. Orders need the menu enabled too, because the order editor reads it; payments need at least one payment method in the settings; purchases need `inventory` as well.
+- A workflow can be enabled only once this version of the server implements it. All eight are implemented now: `menu`, `orders`, `payments`, `inventory`, `purchases`, `recipes`, `planning` and `preparation_recording`. Orders need the menu enabled too, because the order editor reads it; payments need at least one payment method in the settings; purchases need `inventory` as well; recipes need `menu` and `inventory`; planning needs `orders`; preparation recording needs `orders`, `planning` and `inventory`.
 - Orders created under development settings get references that start with `DEV-`; under live settings they start with `ORD-`.
 - Live settings take no orders until all five groups are confirmed, and sell only confirmed foods and variants.
 - The stockroom needs only currency and timezone confirmed in a live system. Stock movements and receipts are only ever added to; a mistake is put right with a correction, not an edit.
+- Recipes and estimates need the same two confirmations in a live system. An estimate is worked out each time it is asked for, from each ingredient's latest purchase. When a recipe is missing, was written for a selling format the variant no longer has, or uses an ingredient whose latest purchase is missing or in another currency, the estimate has no total at all rather than a low one.
+- Planning reads orders, recipes and stock and changes nothing. Its figures are a lower bound whenever it says a recipe is missing.
+- `setup-local` enables every workflow except `preparation_recording`. That one changes how orders become ready, so it is turned on deliberately; see [Turning Preparation Recording On](#turning-preparation-recording-on).
+- A preparation and a correction are records that never change. Recording what was cooked never moves an order to its next step, and cancelling an order never returns stock.
 - Payments and refunds are entries in a ledger that is only ever added to. Do not enter real payments until a backup of the database file has been restored successfully once; that check belongs to Phase B8 and has not been done.
 - A staff edit that changes a confirmed food's name, or a confirmed variant's label, unit, package contents or price, makes it provisional again.
 - `operations close` is for one situation: the frontend reports a save it cannot resolve, its status check keeps answering "not found", and the draft is gone. Closing the key tells the frontend the save did not happen. If the original request arrives later it is refused.
 - With `--environment live`, work that depends on unconfirmed settings is refused, and the session cookie is always HTTPS-only whatever `.env` says.
+
+## Turning Preparation Recording On
+
+While `preparation_recording` is off, staff vouch for each order themselves: they mark it ready and completed, and no stock moves. Once it is on, every new order keeps a count of what has been cooked. Such an order can be marked ready, and completed, only when nothing is left to cook, and each recorded preparation takes its ingredients from stock.
+
+Orders that were already open when it is turned on keep being tracked by hand until you bring them in. Do it in this order, at a quiet moment:
+
+1. Count the shelves. Put the stock right with opening counts or corrections on the Ingredients screen, so that stock on hand is what is physically there now. Food cooked before today has already left the shelf, so this count already allows for it.
+2. Turn recording on:
+
+   ```powershell
+   uv run food-admin settings set --enable preparation_recording
+   ```
+
+3. List the open orders still tracked by hand, with their numbered lines:
+
+   ```powershell
+   uv run food-admin preparation status
+   ```
+
+4. For each one, say what the kitchen has already cooked. Lines you do not name start at nothing; `--all` means the whole order is done.
+
+   ```powershell
+   uv run food-admin preparation baseline DEV-0001 --prepared 1=2 --prepared 2=30 --reason "Counted with the kitchen on 10 October"
+   ```
+
+   This sets the prepared counts, starts counting the order, raises its version by one and writes the counts and your reason to the audit log. It moves no stock: step 1 already accounts for that food.
+5. Run `preparation status` again. It should list no orders. Staff now record the rest of each order on the Planning screen.
+
+Things to know:
+
+- A baseline can be run again to put a mistake right, until cooking has been recorded against the order. After that, change its counts with a preparation correction in the application.
+- An order left tracked by hand still works as before, and planning counts all of it as still to cook until it is completed.
+- An order that is already Ready can be given a baseline with food still to cook. The command says so. The order cannot be completed until the rest is recorded.
+- Do not turn recording off again while recorded orders are open. Their counts could then not be completed, and they could not be marked ready.
+- Rehearsed on 2026-10-11 against a local server; see the [Phase B7 record](docs/phase-7/VERIFICATION.md#live-verification).
 
 ## Configuration
 
@@ -137,7 +179,7 @@ app/api/v1/           contract routers under /api/v1, one module per area
 app/schemas/          request and response models
 app/services/         business rules: credentials, sessions, accounts, business settings,
                       versions, operation keys, menu, audit, business time, orders,
-                      inventory, counters
+                      inventory, counters, recipes, planning, preparations
 app/persistence/      database connection, models and migrations
 tests/                behavioral tests
 docs/                 verification record for each phase

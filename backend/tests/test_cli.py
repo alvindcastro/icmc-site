@@ -162,8 +162,9 @@ def test_local_setup_makes_a_new_machine_ready_in_one_command(
     # Provisional values stay unconfirmed, and only workflows this server has are switched on.
     assert not any(value for value in settings["confirmation"].values())
     enabled = {name for name, enabled in settings["capabilities"].items() if enabled}
-    assert enabled == business_settings.RELEASED
-    assert "recipes" not in enabled
+    assert enabled == business_settings.RELEASED - business_settings.OPT_IN
+    # Recording what is cooked changes how orders become ready; the operator turns it on.
+    assert "preparation_recording" not in enabled
     assert [food["name"] for food in foods] == [
         "Beef Caldereta",
         "Fresh Lumpia",

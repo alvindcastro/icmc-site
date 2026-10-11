@@ -109,9 +109,23 @@ Fixtures are memory-only. They do not establish persistent planning, backend dem
 
 The other three places where the preparation tests read a region without waiting come after the same page has already been seen loaded, so they were left as they are. Other test files were not audited for the same pattern.
 
+## Live Verification Against the Local Backend (2026-10-11)
+
+Backend Phase B7 delivered planning, the shopping list, preparation recording and corrections, so the Phase 7 screens were run in live mode against the real FastAPI server through the development proxy. One answer was deliberately dropped; nothing else was intercepted. The steps and results are in the [backend Phase B7 record](../../../backend/docs/phase-7/VERIFICATION.md#live-verification); the script is `.playwright/phase7-live.mjs`. It also runs the operator's commands for turning recording on.
+
+Seen working in the browser: the Planning screen with remaining quantities by status, ingredient demand and a shortage, and no recording offered while it is off; the shopping list for the same period; after the operator turned recording on and brought the open order in, the reduced demand and the "Record preparation" link; preparation entry with a review of counts, stock before and after and cost; a save whose answer was lost, settled by "Check save status" into the preparation record; an order page with prepared and remaining counts, "Mark ready" disabled and the server's reason beside it; a correction of count and stock with its review, listed beside an unchanged record; a cancellation with the consumed-stock acknowledgment; "Correct stock" opened from a record and saved as a linked movement; and an order marked ready and completed without attestation once everything was prepared. No frontend change was needed.
+
+Sent as requests from the signed-in browser session rather than typed into a form: the ingredient, the purchase, the recipe, the two orders, the repeated preparation request and the unacknowledged cancellation.
+
+Not repeated in the browser against the live server: earlier commitments and a negative stock after them, a missing recipe, a period of several days, printing, editing a partly prepared order, and the refusals for stale versions, short stock and expired reviews. The backend's tests cover the server's side of each.
+
+The backend's local setup leaves `preparation_recording` off, like the default fixtures. An order taken while it was off stays tracked by hand after it is turned on, with null counts and "record preparation" blocked, until the operator brings it in. That in-between state was not looked at in the browser, because the script brings the order in at once; the backend's tests cover it.
+
+Still open: agreement on the refined contract, actual recipes, and the staff review. Nothing was run on Windows.
+
 ## Remaining in Phase 7
 
 - [x] Preparation entry with quantities prepared, actual ingredient consumption and a stock-deduction review.
 - [x] Permitted edits and cancellation after partial preparation, and the explicit stock corrections they require: prepared counts on orders, edit limits, the cancellation review, stock movements linked to a preparation and the reviewed correction of prepared counts.
 - [x] Reconciliation of uncertain preparation operations, with remaining demand and stock refreshed after success.
-- [ ] Walkthroughs. Partial preparation, status changes, earlier commitments, cancellation, repeated requests and printing are covered by the automated checks and the two preview walkthroughs above. The staff review needs people and has not happened.
+- [ ] Walkthroughs. Partial preparation, status changes, earlier commitments, cancellation, repeated requests and printing are covered by the automated checks and the two preview walkthroughs above. Partial preparation, status changes, cancellation and a repeated request also passed against the local backend on 2026-10-11. The staff review needs people and has not happened.

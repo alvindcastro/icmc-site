@@ -345,8 +345,10 @@ def test_with_nothing_left_confirmed_there_is_no_confirmation_time(
 
 
 def test_a_workflow_that_is_not_released_cannot_be_switched_on(
-    staff: TestClient, cli: Cli, capsys: pytest.CaptureFixture[str]
+    staff: TestClient, cli: Cli, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Every workflow is released by now, so this is a server from before the kitchen ones were.
+    monkeypatch.setattr(business_settings, "RELEASED", frozenset({"menu", "orders", "payments"}))
     cli(*FIRST)
 
     unreleased = [name for name in CAPABILITIES if name not in business_settings.RELEASED]
@@ -358,6 +360,12 @@ def test_a_workflow_that_is_not_released_cannot_be_switched_on(
     assert body["capabilities"] == dict.fromkeys(CAPABILITIES, False)
     assert body["version"] == 1
     assert "preparation_recording" in unreleased
+
+
+def test_every_workflow_the_contract_names_is_released() -> None:
+    assert frozenset(CAPABILITIES) == business_settings.RELEASED
+    # Recording is released but is switched on only by the operator, never by local setup.
+    assert sorted(business_settings.OPT_IN) == ["preparation_recording"]
 
 
 def test_a_released_workflow_is_switched_on_and_off_by_the_operator(
@@ -388,6 +396,7 @@ def test_a_workflow_this_version_does_not_have_is_never_reported_as_on(
         assert settings(staff)["capabilities"]["planning"] is True
 
     # The same database under code that has no planning workflow.
+    monkeypatch.setattr(business_settings, "RELEASED", frozenset({"menu"}))
     assert settings(staff)["capabilities"]["planning"] is False
 
 

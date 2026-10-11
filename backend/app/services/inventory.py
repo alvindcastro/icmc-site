@@ -1,8 +1,10 @@
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Context, Decimal, localcontext
+from fractions import Fraction
 from functools import partial
 from typing import Any
 
@@ -54,19 +56,19 @@ from app.values import (
 PREVIEW_SECONDS = 300
 # The only conversions there are: within a dimension, by exact factors. No density, no
 # count-to-weight, and no assumed size for a bag, bottle or box.
-_COMPATIBLE = {"g": ("g", "kg"), "ml": ("ml", "l"), "piece": ("piece",)}
-_FACTOR = {"kg": 1000, "l": 1000}
+COMPATIBLE = {"g": ("g", "kg"), "ml": ("ml", "l"), "piece": ("piece",)}
+FACTOR = {"kg": 1000, "l": 1000}
 _PACKS = ("bag", "bottle", "box")
 # The most of anything that can be in stock, in thousandths of its base unit.
-_LIMIT = MAX_SAFE_INTEGER * 1000
+STOCK_LIMIT = MAX_SAFE_INTEGER * 1000
 
 
-def _hash(value: object) -> str:
+def fingerprint_of(value: object) -> str:
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-def _stale() -> ApiError:
+def stale() -> ApiError:
     return ApiError(
         409, "quote_stale", "This preview is out of date. Review a new one before saving."
     )
@@ -82,7 +84,27 @@ def unit_cost(total_minor: int, minor_digits: int, base_thousandths: int) -> Dec
         return Decimal(total_minor) * 1000 / (Decimal(10) ** minor_digits * base_thousandths)
 
 
-def _line_cost(line: PurchaseLine) -> str | None:
+def cost_basis(ingredient: Ingredient, currency: str) -> PurchaseLine | None:
+    """The receipt line an ingredient is priced from: its latest purchase, if that was in the
+    business currency. A receipt in another currency says nothing about cost in this one."""
+    line = ingredient.latest_line
+    return line if line is not None and line.purchase.currency == currency else None
+
+
+def exact_cost(line: PurchaseLine, thousandths: int) -> Fraction:
+    """What that much of an ingredient cost at this receipt line, in major currency, exactly."""
+    return Fraction(
+        line.total_cost_minor * thousandths, 10**line.purchase.minor_digits * line.base_thousandths
+    )
+
+
+def to_minor(amount: Fraction, minor_digits: int) -> int:
+    """An exact amount that is never negative, in minor units, rounded half-up."""
+    scale = Fraction(10) ** minor_digits
+    return math.floor(amount * scale + Fraction(1, 2))
+
+
+def line_cost(line: PurchaseLine) -> str | None:
     return format_unit_cost(
         unit_cost(line.total_cost_minor, line.purchase.minor_digits, line.base_thousandths)
     )
@@ -111,14 +133,14 @@ def ingredient_out(ingredient: Ingredient) -> IngredientOut:
             "low_stock_threshold": None if threshold is None else format_quantity(threshold),
             "stock_on_hand": format_quantity(ingredient.stock_thousandths),
             "low_stock": threshold is not None and ingredient.stock_thousandths <= threshold,
-            "latest_unit_cost": _line_cost(latest) if latest is not None else None,
+            "latest_unit_cost": line_cost(latest) if latest is not None else None,
             "latest_purchase_date": latest.purchase.purchased_on if latest is not None else None,
             "permitted_actions": _permitted(ingredient),
         }
     )
 
 
-def _latest(ingredient: Ingredient) -> Any:
+def latest(ingredient: Ingredient) -> Any:
     return ingredient_out(ingredient).model_dump(mode="json")
 
 
@@ -157,7 +179,7 @@ def _receipt_line(line: PurchaseLine) -> dict[str, Any]:
         "unit": line.unit,
         "pack_contents": contents,
         "base_quantity": format_quantity(line.base_thousandths),
-        "unit_cost": _line_cost(line),
+        "unit_cost": line_cost(line),
         "total_cost_minor": line.total_cost_minor,
         "stock_movement_id": line.stock_movement_id,
     }
@@ -241,7 +263,7 @@ def update_ingredient(
     changes = body.changes()
     if "low_stock_threshold" in changes:
         threshold = _threshold(changes["low_stock_threshold"], ingredient.base_unit)
-    advance(ingredient, body.expected_version, "ingredient", lambda: _latest(ingredient))
+    advance(ingredient, body.expected_version, "ingredient", lambda: latest(ingredient))
     if "name" in changes:
         ingredient.name = changes["name"]
         ingredient.name_key = ingredient.name.casefold()
@@ -300,7 +322,7 @@ def list_prices(db: Session, ingredient_id: str, query: PageQuery) -> Page[Price
 # --- Stock movements -------------------------------------------------------------------------
 
 
-def _move(
+def move(
     db: Session,
     ingredient: Ingredient,
     delta: int,
@@ -343,6 +365,20 @@ def _move(
     return movement
 
 
+def _used_by(db: Session, preparation_id: str, ingredient: Ingredient) -> bool:
+    """Whether that preparation took this ingredient from the shelf."""
+    found = db.scalar(
+        select(StockMovement.id)
+        .where(
+            StockMovement.ingredient_id == ingredient.id,
+            StockMovement.type == "consumption",
+            StockMovement.preparation_id == preparation_id,
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
 def _review_movement(db: Session, ingredient: Ingredient, body: MovementIn) -> int:
     """Check a hand-entered movement and return the change in thousandths.
 
@@ -367,13 +403,22 @@ def _review_movement(db: Session, ingredient: Ingredient, body: MovementIn) -> i
         if wrong:
             problems.append(FieldError("/delta_base_quantity", "invalid_change", wrong))
     if body.preparation_id is not None:
-        problems.append(
-            FieldError(
-                "/preparation_id",
-                "preparation_recording_disabled",
-                "Preparation recording is not enabled.",
+        if not business_settings.enabled(db, "preparation_recording"):
+            problems.append(
+                FieldError(
+                    "/preparation_id",
+                    "preparation_recording_disabled",
+                    "Preparation recording is not enabled.",
+                )
             )
-        )
+        elif body.type == "opening" or not _used_by(db, body.preparation_id, ingredient):
+            problems.append(
+                FieldError(
+                    "/preparation_id",
+                    "unknown_preparation",
+                    "Choose a preparation that used this ingredient.",
+                )
+            )
     if body.corrects_movement_id is not None:
         related = db.get(StockMovement, body.corrects_movement_id)
         if related is None or related.ingredient_id != ingredient.id:
@@ -386,7 +431,7 @@ def _review_movement(db: Session, ingredient: Ingredient, body: MovementIn) -> i
             )
     if problems:
         raise invalid(*problems)
-    require_current(ingredient, body.expected_version, "ingredient", lambda: _latest(ingredient))
+    require_current(ingredient, body.expected_version, "ingredient", lambda: latest(ingredient))
     action = _permitted(ingredient)[body.type]
     if not action.allowed:
         raise invalid(FieldError("/type", action.reason_code or "", action.reason or ""))
@@ -399,7 +444,7 @@ def _review_movement(db: Session, ingredient: Ingredient, body: MovementIn) -> i
                 "This would leave less than nothing in stock.",
             )
         )
-    if after > _LIMIT:
+    if after > STOCK_LIMIT:
         raise invalid(
             FieldError(
                 "/delta_base_quantity", "overflow", "This would be more stock than can be recorded."
@@ -410,7 +455,7 @@ def _review_movement(db: Session, ingredient: Ingredient, body: MovementIn) -> i
 
 def _movement_fingerprint(body: MovementIn, delta: int) -> str:
     """What was reviewed, after validation: `100` and `100.000` are the same movement."""
-    return _hash(
+    return fingerprint_of(
         [
             body.expected_version,
             body.type,
@@ -422,7 +467,7 @@ def _movement_fingerprint(body: MovementIn, delta: int) -> str:
     )
 
 
-def _remember(
+def remember(
     db: Session, kind: str, subject_id: str, fingerprint: str, dependencies: object, now: datetime
 ) -> Preview:
     # Previews are free to ask for, so finished ones are cleared as new ones arrive.
@@ -440,7 +485,7 @@ def _remember(
     return preview
 
 
-def _spend(
+def spend(
     db: Session, preview_id: str, kind: str, subject_id: str, fingerprint: str, now: datetime
 ) -> Preview:
     """The preview a save refers to, if it is still the one that was reviewed. It is spent by
@@ -453,7 +498,7 @@ def _spend(
         or now >= preview.expires_at
         or preview.input_fingerprint != fingerprint
     ):
-        raise _stale()
+        raise stale()
     db.delete(preview)
     return preview
 
@@ -463,7 +508,7 @@ def preview_movement(
 ) -> MovementPreviewOut:
     ingredient = get_ingredient(db, ingredient_id)
     delta = _review_movement(db, ingredient, body)
-    preview = _remember(db, "movement", ingredient.id, _movement_fingerprint(body, delta), {}, now)
+    preview = remember(db, "movement", ingredient.id, _movement_fingerprint(body, delta), {}, now)
     return MovementPreviewOut(
         id=preview.id,
         expires_at=preview.expires_at,
@@ -480,8 +525,8 @@ def save_movement(
 ) -> tuple[StockMovement, Ingredient]:
     ingredient = get_ingredient(db, ingredient_id)
     delta = _review_movement(db, ingredient, body)
-    _spend(db, body.preview_id, "movement", ingredient.id, _movement_fingerprint(body, delta), now)
-    movement = _move(
+    spend(db, body.preview_id, "movement", ingredient.id, _movement_fingerprint(body, delta), now)
+    movement = move(
         db,
         ingredient,
         delta,
@@ -490,6 +535,7 @@ def save_movement(
         key,
         actor,
         now,
+        preparation_id=body.preparation_id,
         corrects_movement_id=body.corrects_movement_id,
     )
     ingredient.version += 1
@@ -566,7 +612,7 @@ def _base_quantity(
     if (
         ingredient is not None
         and physical is not None
-        and physical not in _COMPATIBLE[ingredient.base_unit]
+        and physical not in COMPATIBLE[ingredient.base_unit]
     ):
         problems.append(
             (
@@ -578,7 +624,7 @@ def _base_quantity(
         )
     if problems or physical is None:
         return 0, problems
-    return count * contents // 1000 * _FACTOR.get(physical, 1), problems
+    return count * contents // 1000 * FACTOR.get(physical, 1), problems
 
 
 def _review_purchase(db: Session, draft: PurchaseDraftIn) -> ReviewedPurchase:
@@ -602,7 +648,7 @@ def _review_purchase(db: Session, draft: PurchaseDraftIn) -> ReviewedPurchase:
         found += wrong
         if ingredient is not None and not found:
             before = running.get(ingredient.id, ingredient.stock_thousandths)
-            if base > _LIMIT or before + base > _LIMIT:
+            if base > STOCK_LIMIT or before + base > STOCK_LIMIT:
                 found.append(("quantity", "overflow", "This is more stock than can be recorded."))
             else:
                 running[ingredient.id] = before + base
@@ -617,12 +663,12 @@ def _review_purchase(db: Session, draft: PurchaseDraftIn) -> ReviewedPurchase:
 
 
 def _purchase_fingerprint(draft: PurchaseDraftIn) -> str:
-    return _hash(draft.model_dump(mode="json"))
+    return fingerprint_of(draft.model_dump(mode="json"))
 
 
 def preview_purchase(db: Session, draft: PurchaseDraftIn, now: datetime) -> PurchasePreviewOut:
     reviewed = _review_purchase(db, draft)
-    preview = _remember(db, "purchase", "", _purchase_fingerprint(draft), reviewed.bound(), now)
+    preview = remember(db, "purchase", "", _purchase_fingerprint(draft), reviewed.bound(), now)
     digits = reviewed.settings.minor_digits
     return PurchasePreviewOut.model_validate(
         {
@@ -668,18 +714,18 @@ def save_purchase(
 ) -> tuple[Purchase, list[Ingredient]]:
     """Commit a reviewed receipt: its lines, one stock movement per line, the stock and the
     cost basis, all in the caller's transaction or not at all."""
-    preview = _spend(db, body.preview_id, "purchase", "", _purchase_fingerprint(body.draft), now)
+    preview = spend(db, body.preview_id, "purchase", "", _purchase_fingerprint(body.draft), now)
     reviewed = _review_purchase(db, body.draft)
     bound = json.loads(preview.dependencies)
     if bound["settings"] != reviewed.settings.version:
-        raise _stale()
+        raise stale()
     for line in reviewed.lines:
         ingredient = line.ingredient
         require_current(
             ingredient,
             bound["ingredients"].get(ingredient.id, 0),
             "ingredient",
-            partial(_latest, ingredient),
+            partial(latest, ingredient),
         )
     number = next_number(db, "purchase_reference")
     # Development receipts are marked as such in the reference, like development orders.
@@ -708,7 +754,7 @@ def save_purchase(
     changed: dict[str, Ingredient] = {}
     for position, line in enumerate(reviewed.lines):
         ingredient, item = line.ingredient, line.item
-        movement = _move(
+        movement = move(
             db,
             ingredient,
             line.base,

@@ -71,6 +71,8 @@ class PricedLine:
     unit_price_minor: int
     quantity: int
     preparation_notes: str
+    # How many are already cooked; null when the order keeps no count.
+    prepared: int | None
 
     @property
     def total(self) -> int:
@@ -87,8 +89,8 @@ class PricedLine:
             "quantity": self.quantity,
             "line_total_minor": self.total,
             "preparation_notes": self.preparation_notes,
-            "prepared_quantity": None,
-            "remaining_quantity": None,
+            "prepared_quantity": self.prepared,
+            "remaining_quantity": None if self.prepared is None else self.quantity - self.prepared,
         }
 
 
@@ -195,10 +197,49 @@ def _not_found() -> ApiError:
     return ApiError(404, "not_found", "This order does not exist.")
 
 
-def permitted_actions(order: Order, payments_enabled: bool) -> dict[str, PermittedAction]:
+def active_lines(order: Order) -> list[OrderItem]:
+    """The lines an order has now, in their order. Lines edited away stay in the database."""
+    return sorted(
+        (item for item in order.lines if item.removed_at is None), key=lambda item: item.position
+    )
+
+
+def recorded(order: Order) -> bool:
+    """Whether the order keeps a count of what has been cooked."""
+    return order.preparation_tracking == "recorded"
+
+
+def remaining(order: Order) -> int:
+    """How many selling units of a recorded order are still to cook."""
+    return sum(item.quantity - (item.prepared_quantity or 0) for item in active_lines(order))
+
+
+def _preparation(order: Order, recording_enabled: bool) -> PermittedAction:
+    if not recording_enabled:
+        return blocked("preparation_recording_disabled", "Preparation recording is not enabled.")
+    if not recorded(order):
+        return blocked(
+            "tracked_by_hand",
+            "This order was taken before preparation was recorded and is tracked by hand.",
+        )
+    if order.status not in ("confirmed", "preparing", "ready"):
+        return blocked(
+            "order_not_preparable", "Only confirmed, preparing or ready orders can be prepared."
+        )
+    if remaining(order) == 0:
+        return blocked("nothing_remaining", "Nothing remains to prepare.")
+    return allowed()
+
+
+def permitted_actions(
+    order: Order, payments_enabled: bool, recording_enabled: bool = False
+) -> dict[str, PermittedAction]:
     """Every action staff could take on an order, each allowed or blocked with its reason."""
     status = order.status
     money = settle(order.total_minor, status, *_ledger_totals(order))
+    # On an order tracked by hand, staff vouch that the food is ready. On a recorded one the
+    # counts decide: nothing may be left to cook.
+    cooked = not recorded(order) or remaining(order) == 0
 
     def when(condition: bool, code: str, reason: str) -> PermittedAction:
         return allowed() if condition else blocked(code, reason)
@@ -224,11 +265,18 @@ def permitted_actions(order: Order, payments_enabled: bool) -> dict[str, Permitt
         "start_preparing": when(
             status == "confirmed", "order_not_confirmed", "Start preparing a confirmed order."
         ),
-        # While preparation recording is off, staff attest that the food is ready.
         "mark_ready": when(
             status == "preparing", "order_not_preparing", "Mark ready after preparation starts."
+        )
+        if cooked or status != "preparing"
+        else blocked(
+            "preparation_incomplete", "Record all remaining preparation before marking ready."
         ),
-        "complete": when(status == "ready", "order_not_ready", "Complete a ready order."),
+        "complete": when(status == "ready", "order_not_ready", "Complete a ready order.")
+        if cooked or status != "ready"
+        else blocked(
+            "preparation_incomplete", "Record all remaining preparation before completion."
+        ),
         "cancel": when(
             status in ("pending", "confirmed", "preparing", "ready"),
             "order_finished",
@@ -236,18 +284,13 @@ def permitted_actions(order: Order, payments_enabled: bool) -> dict[str, Permitt
         ),
         "record_payment": pay,
         "refund": refund,
-        "record_preparation": blocked(
-            "preparation_recording_disabled", "Preparation recording is not enabled."
-        ),
+        "record_preparation": _preparation(order, recording_enabled),
     }
 
 
 def order_out(db: Session, order: Order) -> OrderOut:
     money = settle(order.total_minor, order.status, *_ledger_totals(order))
-    payments_enabled = business_settings.enabled(db, "payments")
-    items = sorted(
-        (item for item in order.lines if item.removed_at is None), key=lambda item: item.position
-    )
+    items = active_lines(order)
     return OrderOut.model_validate(
         {
             "id": order.id,
@@ -282,15 +325,18 @@ def order_out(db: Session, order: Order) -> OrderOut:
                     "quantity": item.quantity,
                     "line_total_minor": item.unit_price_minor * item.quantity,
                     "preparation_notes": item.preparation_notes,
-                    "prepared_quantity": None,
-                    "remaining_quantity": None,
+                    "prepared_quantity": item.prepared_quantity,
+                    "remaining_quantity": None
+                    if item.prepared_quantity is None
+                    else item.quantity - item.prepared_quantity,
                 }
                 for item in items
             ],
             "notes": order.notes,
             "status": order.status,
             "preparation_tracking": order.preparation_tracking,
-            "cancellation_requires_stock_acknowledgment": False,
+            # Cancelling never returns what cooking took from the shelf.
+            "cancellation_requires_stock_acknowledgment": _has_prepared(order),
             "subtotal_minor": order.subtotal_minor,
             "delivery_charge_minor": order.delivery_charge_minor,
             "tax_minor": order.tax_minor,
@@ -314,7 +360,7 @@ def order_out(db: Session, order: Order) -> OrderOut:
                 }
                 for event in sorted(order.events, key=lambda event: event.sequence)
             ],
-            "permitted_actions": permitted_actions(order, payments_enabled),
+            "permitted_actions": _actions(db, order),
             "created_at": order.created_at,
             "updated_at": order.updated_at,
         }
@@ -401,13 +447,15 @@ def calculate(db: Session, draft: DraftIn, order: Order | None) -> Calculation:
             details={"utc_offsets": twice.offsets},
         ) from None
 
-    saved_lines = (
-        {item.id: item for item in order.lines if item.removed_at is None} if order else {}
-    )
+    saved_lines = {item.id: item for item in active_lines(order)} if order else {}
+    # A new order is counted from its first day if preparation is being recorded by then.
+    counted = recorded(order) if order else business_settings.enabled(db, "preparation_recording")
     lines: list[PricedLine] = []
     bound: list[list[Any]] = []
     client_ids: set[str] = set()
     saved_ids: set[str] = set()
+    # Saved lines the draft names at all, rightly or wrongly: those are not being removed.
+    named: set[str] = set()
     for index, item in enumerate(draft.items):
         if item.client_line_id in client_ids:
             refuse(f"items/{index}/client_line_id", "duplicate", "Row identifiers must differ.")
@@ -416,6 +464,7 @@ def calculate(db: Session, draft: DraftIn, order: Order | None) -> Calculation:
         saved = None
         if item.order_item_id is not None:
             saved = saved_lines.get(item.order_item_id)
+            named.add(item.order_item_id)
             if saved is None or saved.variant_id != item.variant_id or saved.id in saved_ids:
                 refuse(
                     f"items/{index}/variant_id",
@@ -448,6 +497,14 @@ def calculate(db: Session, draft: DraftIn, order: Order | None) -> Calculation:
                     details={"food_id": food.id, "variant_id": variant.id},
                 )
             bound.append([food.id, food.version, variant.id, variant.version])
+        prepared = (saved.prepared_quantity or 0) if saved is not None else 0
+        if item.quantity < prepared:
+            refuse(
+                f"items/{index}/quantity",
+                "below_prepared",
+                f"{prepared} of this line are already prepared; it cannot go below that.",
+            )
+            continue
         source: OrderItem | Variant = saved if saved is not None else variant
         line = PricedLine(
             client_line_id=item.client_line_id,
@@ -460,11 +517,16 @@ def calculate(db: Session, draft: DraftIn, order: Order | None) -> Calculation:
             unit_price_minor=saved.unit_price_minor if saved is not None else variant.price_minor,
             quantity=item.quantity,
             preparation_notes=item.preparation_notes,
+            prepared=prepared if counted else None,
         )
         if line.total > MAX_SAFE_INTEGER:
             refuse(f"items/{index}/quantity", "overflow", "This quantity is too large.")
             continue
         lines.append(line)
+    if any(
+        (kept.prepared_quantity or 0) > 0 and kept.id not in named for kept in saved_lines.values()
+    ):
+        refuse("items", "prepared_line_removed", "A line with prepared food cannot be removed.")
     if problems:
         raise invalid(*problems)
 
@@ -564,7 +626,20 @@ def quote(db: Session, body: QuoteIn, now: datetime) -> QuoteOut:
 
 
 def _actions(db: Session, order: Order) -> dict[str, PermittedAction]:
-    return permitted_actions(order, business_settings.enabled(db, "payments"))
+    return permitted_actions(
+        order,
+        business_settings.enabled(db, "payments"),
+        business_settings.enabled(db, "preparation_recording"),
+    )
+
+
+def _has_prepared(order: Order) -> bool:
+    return any((item.prepared_quantity or 0) > 0 for item in active_lines(order))
+
+
+def latest(db: Session, order: Order) -> Any:
+    """The order as a version conflict hands it back."""
+    return _latest(db, order)
 
 
 def _require_editable(db: Session, order: Order) -> None:
@@ -657,6 +732,7 @@ def _write(order: Order, draft: DraftIn, result: Calculation, now: datetime) -> 
                 selling_unit=line.selling_unit,
                 package_quantity=line.package_quantity,
                 unit_price_minor=line.unit_price_minor,
+                prepared_quantity=0 if recorded(order) else None,
                 removed_at=None,
             )
             order.lines.append(item)
@@ -680,7 +756,9 @@ def create(db: Session, body: OrderCreate, actor: StaffUser, now: datetime) -> O
         reference=f"{prefix}-{next_number(db, 'order_reference'):04d}",
         version=1,
         status=body.initial_status,
-        preparation_tracking="manual",
+        preparation_tracking="recorded"
+        if business_settings.enabled(db, "preparation_recording")
+        else "manual",
         created_at=now,
     )
     _write(order, body.draft, result, now)
@@ -742,6 +820,14 @@ def cancel(db: Session, order_id: str, body: CancelIn, actor: StaffUser, now: da
     if not action.allowed:
         raise ApiError(
             409, "action_not_allowed", action.reason or "This order cannot be cancelled."
+        )
+    if _has_prepared(order) and not body.acknowledge_consumed_stock:
+        raise invalid(
+            FieldError(
+                "/acknowledge_consumed_stock",
+                "required",
+                "Acknowledge that the stock already used will not be returned.",
+            )
         )
     _event(order, order.status, "cancelled", actor, now, body.reason)
     order.status = "cancelled"

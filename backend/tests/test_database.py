@@ -30,6 +30,14 @@ TABLES = {
     "purchases",
     "purchase_lines",
     "previews",
+    "recipes",
+    "recipe_items",
+    "preparations",
+    "preparation_allocations",
+    "preparation_consumptions",
+    "preparation_corrections",
+    "correction_allocations",
+    "correction_stock",
 }
 
 

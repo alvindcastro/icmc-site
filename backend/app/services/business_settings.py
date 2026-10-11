@@ -22,7 +22,21 @@ CAPABILITIES = (
 )
 # Workflows this version of the server actually implements. Each backend phase adds its own;
 # nothing outside this set can be switched on or is ever reported as on.
-RELEASED: frozenset[str] = frozenset({"menu", "orders", "payments", "inventory", "purchases"})
+RELEASED: frozenset[str] = frozenset(
+    {
+        "menu",
+        "orders",
+        "payments",
+        "inventory",
+        "purchases",
+        "recipes",
+        "planning",
+        "preparation_recording",
+    }
+)
+# Released, but never switched on by local setup: turning it on changes how every later order
+# becomes ready, so the operator does it deliberately, by the procedure in the README.
+OPT_IN: frozenset[str] = frozenset({"preparation_recording"})
 
 ENVIRONMENTS = ("development", "live")
 FULFILLMENT_METHODS = ("pickup", "delivery")

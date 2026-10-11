@@ -52,11 +52,23 @@ One screen test, that no recipe links appear without the capability, passed befo
 
 The jsdom scroll warning is a platform limitation. Fixtures are memory-only and reset on reload. They do not establish persistent recipes, backend costing, authorization or real staff acceptance.
 
+## Live Verification Against the Local Backend (2026-10-11)
+
+Backend Phase B6 delivered recipes and ingredient cost estimates, so the Phase 6 screens were run in live mode against the real FastAPI server through the development proxy. One answer was deliberately dropped; nothing else was intercepted. The steps and results are in the [backend Phase B6 record](../../../backend/docs/phase-6/VERIFICATION.md#live-verification); the script is `.playwright/phase6-live.mjs`.
+
+Seen working in the browser: the menu's "Add recipe" link and the empty recipe page with an Incomplete estimate; a 750 g recipe entered in the editor, saved with a lost answer and found saved once by "Check saved recipe"; the Complete estimate of $9.00 with $71.00 contribution and $12.00 per kg; an unpriced ingredient added through the editor, leaving the estimate Incomplete with no $0.00, a link to the ingredient and "No purchase price"; $9.01 after that ingredient was bought; $15.01 after a newer flour purchase, with no recipe save in between; a save overtaken by another one, shown the latest recipe, kept as a draft and saved as the next version; and the menu marking the variant "Recipe and estimate". No frontend change was needed.
+
+Sent as requests from the signed-in browser session rather than typed into a form: the two ingredients, the three purchases, and the save that overtook the page.
+
+Not repeated in the browser against the live server: a recipe left behind by a changed selling format, a second creation, refused units and quantities, and the workflow and live-settings gates. The backend's tests cover them.
+
+Still open for this gate: agreement on the refined contract, actual recipes and purchase prices, confirmed currency and timezone, and a staff walkthrough. Nothing was run on Windows.
+
 ## Live Handoff
 
 - [ ] Obtain backend acceptance of the refined recipe/estimate contract, including the basis row fields, the null rules for incomplete estimates, the yield-mismatch rule and saves without operation keys.
-- [ ] Decide whether the menu list needs a backend-derived estimate status per variant; the current contract cannot show missing prices in the list.
+- [ ] Decide whether the menu list needs a backend-derived estimate status per variant; the current contract cannot show missing prices in the list. Progress, 2026-10-11: backend decision D12 keeps the status on the recipe page. It was adopted by default when backend Phase B6 was built; the owner has not confirmed it.
 - [ ] Collect actual recipes per sellable variant and size from the business. Do not provision development samples or the lorem ipsum placeholders as live recipes.
-- [ ] Repeat yield and unit validation, raced creation and stale-version conflicts, the unrounded cost basis with a single rounding, latest business-date basis selection, and recomputation after recipe, price and purchase changes against persistent FastAPI storage.
+- [ ] Repeat yield and unit validation, raced creation and stale-version conflicts, the unrounded cost basis with a single rounding, latest business-date basis selection, and recomputation after recipe, price and purchase changes against persistent FastAPI storage. Progress, 2026-10-11: a stale-version conflict, single rounding, the latest basis and recomputation after recipe and purchase changes were seen in the browser against the local server; the rest is covered by the backend's tests only.
 - [ ] Verify cookies/CSRF and capability authorization on recipe and estimate reads and saves.
 - [ ] Obtain staff review of the purchase-to-recipe workflow on desktop and phone.

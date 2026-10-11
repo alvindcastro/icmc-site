@@ -10,7 +10,7 @@ class Versioned(Protocol):
 
 
 def require_current(
-    record: Versioned, expected: int, resource_type: str, latest: Callable[[], Any]
+    record: Versioned, expected: int | None, resource_type: str, latest: Callable[[], Any]
 ) -> None:
     """Refuse a caller who has not seen the record as it is now, handing back the latest."""
     if record.version != expected:

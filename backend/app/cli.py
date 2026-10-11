@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 import secrets
 import sys
 from collections.abc import Callable, Sequence
@@ -14,7 +15,7 @@ from app.persistence import migrate
 from app.persistence.database import Database
 from app.persistence.models import Category, Food
 from app.schemas.settings import settings_out
-from app.services import accounts, business_settings, menu, operations
+from app.services import accounts, business_settings, menu, operations, orders, preparations
 from app.services.credentials import hash_token
 from app.values import format_instant
 
@@ -55,6 +56,24 @@ def _parser() -> argparse.ArgumentParser:
     confirm.add_argument("id")
     confirm.add_argument("--version", type=int, required=True, help="the version you reviewed")
     actions.add_parser("seed", help="fill an empty development menu with the provisional rows")
+    preparation = commands.add_parser(
+        "preparation", help="bring open orders into preparation recording"
+    )
+    actions = preparation.add_subparsers(dest="action", required=True)
+    actions.add_parser("status", help="list the open orders still tracked by hand")
+    baseline = actions.add_parser(
+        "baseline", help="record what an open order already had prepared; moves no stock"
+    )
+    baseline.add_argument("reference", help="the order reference, such as DEV-0001")
+    baseline.add_argument(
+        "--prepared",
+        action="append",
+        default=[],
+        metavar="LINE=QUANTITY",
+        help="how many of a line are already prepared; lines not named start at nothing",
+    )
+    baseline.add_argument("--all", action="store_true", help="every line is fully prepared")
+    baseline.add_argument("--reason", required=True, help="where the counts came from")
     operation = commands.add_parser("operations", help="inspect or close keyed saves")
     actions = operation.add_subparsers(dest="action", required=True)
     actions.add_parser("unresolved", help="list saves that were admitted and never finished")
@@ -160,7 +179,7 @@ def _setup_local(database: Database, clock: Clock) -> None:
                 db,
                 now,
                 business_settings.PROVISIONAL_DEVELOPMENT,
-                enable=sorted(business_settings.RELEASED),
+                enable=sorted(business_settings.RELEASED - business_settings.OPT_IN),
             )
             print("Provisional development settings created. Nothing in them is confirmed.")
         else:
@@ -205,6 +224,47 @@ def _menu(args: argparse.Namespace, database: Database, clock: Clock) -> None:
         with database.write() as db:
             added = menu.seed(db, clock())
         print(f"Seeded {added} provisional foods. Nothing in the seed is confirmed.")
+
+
+def _preparation(args: argparse.Namespace, database: Database, clock: Clock) -> None:
+    if args.action == "status":
+        with database.read() as db:
+            recording = business_settings.enabled(db, "preparation_recording")
+            waiting = preparations.tracked_by_hand(db)
+            print(f"Preparation recording is {'on' if recording else 'off'}.")
+            print(f"Open orders still tracked by hand: {len(waiting)}")
+            for order in waiting:
+                print(f"  {order.reference}  {order.status}  {order.local_date.isoformat()}")
+                for number, line in enumerate(orders.active_lines(order), start=1):
+                    print(f"    {number}. {line.food_name}, {line.variant_label}: {line.quantity}")
+        return
+    if args.all and args.prepared:
+        raise OperatorError("Use --all or --prepared, not both.")
+    reason = args.reason.strip()
+    if not reason:
+        raise OperatorError("Give a reason that says where the counts came from.")
+    prepared: dict[int, int] = {}
+    for entry in args.prepared:
+        found = re.fullmatch("([0-9]+)=([0-9]+)", entry)
+        if found is None:
+            raise OperatorError("Give each --prepared as LINE=QUANTITY, such as 1=2.")
+        number = int(found.group(1))
+        if number in prepared:
+            raise OperatorError(f"--prepared names line {number} twice.")
+        prepared[number] = int(found.group(2))
+    with database.write() as db:
+        order = preparations.baseline(db, args.reference, prepared, args.all, reason, clock())
+        print(f"{order.reference} is now recorded. No stock was moved.")
+        for number, line in enumerate(orders.active_lines(order), start=1):
+            print(
+                f"  {number}. {line.food_name}, {line.variant_label}: "
+                f"{line.prepared_quantity} of {line.quantity} prepared"
+            )
+        if order.status == "ready" and orders.remaining(order):
+            print(
+                "This order is ready with food still to cook. "
+                "It cannot be completed until the rest is recorded."
+            )
 
 
 def _operations(args: argparse.Namespace, database: Database, clock: Clock) -> None:
@@ -282,6 +342,8 @@ def main(
             _category(args, database, clock)
         elif args.command == "menu":
             _menu(args, database, clock)
+        elif args.command == "preparation":
+            _preparation(args, database, clock)
         else:
             _operations(args, database, clock)
         return 0

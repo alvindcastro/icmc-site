@@ -326,6 +326,19 @@ Recipe saves carry no operation key: a version-guarded `PUT` cannot apply twice,
 
 Estimate refinements. `currency` equals the settings currency and amounts use the settings `minor_digits`. `recipe_version` is null without a recipe. `ingredient_contribution_minor` equals `selling_price_minor - ingredient_cost_minor` and may be negative. `complete` is true exactly when `missing` is empty; every incomplete estimate has null cost and contribution. Each `missing` entry carries `variant_id`; `ingredient_id` is null for `recipe_missing`. A recipe whose yield no longer equals the variant's current selling format is reported as `recipe_missing`, with its `recipe_version`, until it is saved again for that format. `basis` has one row per recipe ingredient, in recipe order: `{ingredient_id, ingredient_name, base_unit, base_quantity, purchase_id, purchase_line_id, purchased_on, unit_cost, estimated_cost}`. A priced row names the latest purchase basis, the nine-decimal `unit_cost`, and `estimated_cost`, the row amount as a nine-decimal major-currency string calculated from the unrounded receipt basis. An unpriced row has all five of those fields null and a matching `price_missing` entry; it is never zero. The total is the sum of the exact row amounts rounded once, half-up; the frontend displays row amounts and does not re-sum them. The menu list shows only recipe presence from `recipe_id`. A per-variant estimate status in the food list would need an additional backend-derived variant field and is not part of this proposal.
 
+Backend refinement (2026-10-11), from implementing this section in backend Phase B6. None of it changes a request or response shape.
+
+- `yield` is compared whole with one selling unit of the variant as it is now. Anything else, including a missing or extra member, is one field error at `/yield`.
+- A save is checked in this order: the fields, then the version. An integer `expected_version` while no recipe exists is 422 at `/expected_version`; a null one after another creation is the 409 described above.
+- Each row reports its first problem only: the ingredient, then the unit, then the quantity. A quantity is also refused at `quantity` when its amount in the base unit is beyond the quantity bound, so `9007199254740991` with `kg` is too large.
+- A recipe and an estimate show each ingredient under its present name. Renaming an ingredient does not change the recipe version.
+- Saving a recipe replaces its rows. The rows of earlier versions stay in the database and are not served.
+- An ingredient's latest purchase basis counts as its price only when that receipt is in the settings currency. Otherwise the row is unpriced and listed as `price_missing`; older receipts are not searched for one in the right currency.
+- `unit_cost` in a basis row is the same string the ingredient and its price history show for that receipt line.
+- A total beyond the money bound is 422 `validation_failed` with one field error at `/ingredient_cost_minor`, code `overflow`. No estimate is returned.
+- In a live system every recipe and estimate route, reading included, is 409 `settings_unconfirmed` until currency and timezone are confirmed.
+- The food list carries no estimate status. Backend decision D12 kept it on the recipe page, as this section proposes.
+
 ## Planning and Preparation (Phase 7)
 
 `GET /planning?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` uses inclusive business dates and returns `{id, calculated_at, timezone, period, complete, missing, foods, ingredients, permitted_actions}`. Bound the requested period to 366 days; reject an invalid/larger range with 422. This grouped result is complete for the period, not a paginated list with incomplete totals.
@@ -357,6 +370,48 @@ Phase 7 frontend refinements for preparation recording, proposed for backend agr
 Phase 7 frontend refinements for corrections, proposed for backend agreement. The correction preview is `{id, expires_at, preparation_id, reason, allocations, stock_corrections}` with the trimmed reason. Preview allocations are `{order_id, reference, order_item_id, variant_id, expected_version, food_name, variant_label, selling_unit, package_contents, ordered_quantity, prepared_before, delta_quantity, prepared_after, remaining_after}` in request order, with `prepared_after = prepared_before + delta_quantity`, `0 <= prepared_after <= ordered_quantity` and `remaining_after = ordered_quantity - prepared_after`. Preview stock corrections are `{ingredient_id, ingredient_name, base_unit, expected_version, corrects_movement_id, delta_base_quantity, before_quantity, after_quantity}` with `after_quantity = before_quantity + delta_base_quantity >= 0`. A request needs a nonblank reason of at most 2000 characters and at least one nonzero change. An allocation must name a line of this preparation, and its change may not take the count below what this preparation recorded net of its earlier corrections. A stock correction must name an ingredient this preparation consumed and that consumption movement as `corrects_movement_id`. Validation failures are 422 with paths such as `/reason`, `/allocations/0/delta_quantity` and `/stock_corrections/0/corrects_movement_id`; lowering a count on a Ready or Completed order is refused at `/allocations/{n}/delta_quantity`. Stale versions are 409 `version_conflict`, stock below zero is 409 `insufficient_stock` at the row's `delta_base_quantity`, and a missing, expired or changed preview is 409 `quote_stale`. `POST /preparations/{id}/corrections` answers `{correction, orders, ingredients}`; the correction is `{id, preparation_id, reason, allocations, stock_corrections, operation_id, recorded_at, recorded_by}` with the preview's rows minus `expected_version`, and `stock_movement_id` on each stock row. Its movements have type `correction`, the correction's reason, `preparation_id` and `corrects_movement_id`. Its operation has `resource_type: "preparation_correction"`. Addition: `GET /preparations/{id}/corrections` returns `{items: Correction[]}` in recorded order, so the immutable Preparation never changes and its corrections can still be shown beside it.
 
 Corrections are append-only, linked to the original preparation/movements, bounded so prepared quantities remain between zero and ordered quantity, and stock remains nonnegative. Decreasing prepared quantities on an active Ready/Completed order is rejected until an operator resolves the inconsistent fulfillment state; normal staff cannot reverse completed status. Cancelled-order corrections may amend audit quantities/stock but never restore demand. Explicit physical corrections/waste linked to preparation can also use the ingredient-movement workflow when prepared counts are correct. There is no automatic stock return on cancellation or refund.
+
+Backend refinement (2026-10-11), from implementing this section in backend Phase B7. None of it changes a request or response shape.
+
+Planning:
+
+- Planning needs only the `orders` and `planning` workflows, in a live system as well. It reads recipes and stock directly, whether or not the `recipes` and `inventory` workflows are enabled.
+- Period errors are field errors: a single date at the missing one (`/query/date_from` or `/query/date_to`, `required`), a start after the end and a period over 366 days at `/query/date_to` (`before_start`, `period_too_long`), an unknown parameter at its own name.
+- `foods` lists every line fulfilled in the period, fully prepared ones included; such a line wants nothing and cannot make the plan incomplete. Rows are by food name, then label; a row's `orders` are soonest first, then by reference.
+- An order tracked by hand reports `prepared_quantity` 0 and stays in demand in full until it is completed.
+- A recipe counts for a line only if it was written for the selling format that was ordered. Otherwise the variant is `recipe_missing`. There is one `missing` entry per variant, by food name, then label.
+- `ingredients` holds every ingredient with demand in or before the period, by name. `id` is new on each request; nothing is stored.
+- `permitted_actions.record_preparation` is blocked with `preparation_recording_disabled` while that workflow is off, and with `inventory_disabled` while the stockroom is.
+- Demand beyond the quantity bound is 422 `validation_failed` with one field error at `/ingredients` or `/foods`, code `overflow`.
+
+Orders once preparation is recorded:
+
+- An order is `recorded` if `preparation_recording` was enabled when it was created. One taken earlier stays `manual`, with null counts, attested readiness and `record_preparation` blocked with `tracked_by_hand`, until the operator brings it in; see the backend README.
+- `mark_ready` and `complete` are blocked with `preparation_incomplete` while anything remains. `record_preparation` is blocked with `order_not_preparable` outside Confirmed, Preparing and Ready, and with `nothing_remaining` when all is cooked.
+- A quote refuses a quantity below the prepared count at `/draft/items/{n}/quantity` (`below_prepared`) and a draft that leaves out a prepared line at `/draft/items` (`prepared_line_removed`). A saved line named with another variant is reported at its `variant_id` only.
+- Cancelling an order with anything prepared, without the acknowledgment, is 422 at `/acknowledge_consumed_stock` (`required`).
+
+Recording:
+
+- The preparation routes need `orders`, `planning`, `inventory` and `preparation_recording`; in a live system every one of them, reading included, is 409 `settings_unconfirmed` until currency and timezone are confirmed.
+- A draft has 1 to 500 allocations and at most 500 consumption rows. `note` may be left out.
+- A draft is checked in this order: its fields, all of them; then versions, orders before ingredients, the first stale one reported; then the shelf. A save first finds its review, so a missing, expired, spent or different review is 409 `quote_stale` before anything else.
+- Field errors: an order that is unknown, tracked by hand or not Confirmed, Preparing or Ready at `order_id` (`order_not_preparable`); a line that is not on that order, or named twice, at `order_item_id`; more than remains at `quantity` (`exceeds_remaining`); an unknown or repeated ingredient at `ingredient_id`; a unit of another dimension at `unit` (`incompatible_unit`); a quantity that is zero, malformed or too large at `quantity`; an empty consumption list without a note at `/draft/note` (`required`).
+- "The identical input" is compared after validation: `1.5` and `1.500`, and surrounding spaces in the note, are not differences. The unit is: 1.5 kg and 1500 g are different drafts. A saved record returns each quantity as it was entered in the save.
+- A review is also bound to the settings version, each cooked variant's recipe and version, and each used ingredient's cost basis. If any changed, the save is 409 `quote_stale`. A successful save spends the review.
+- `recipe_snapshots` names the variant's recipe at the time, whether or not it was written for the ordered format, one per variant in the order the draft first names it.
+- A cost basis is the ingredient's latest purchase, if that receipt is in the settings currency; otherwise the four basis fields are null and the estimate is incomplete. A preparation that used nothing has a known cost of zero. A cost beyond the money bound is 422 at `/draft/consumption` (`overflow`).
+- The consumption movements have reason `Preparation recorded`. Each affected order and ingredient advances one version and is returned once, in the order the draft first names it. An order's status is never changed.
+- `preparation_id` on a stock movement is accepted for waste and correction only: 422 at `/preparation_id` with `unknown_preparation` for an opening count or for a preparation that did not use the ingredient, and with `preparation_recording_disabled` while recording is off.
+
+Corrections:
+
+- A correction is checked like a draft: fields, then versions, then the shelf, after its review has been found. A review belongs to one preparation.
+- An allocation must name an order and a line this preparation recorded, still on the order, once; otherwise `order_item_id` is reported (`unknown_line`, `repeated_line`). A change that is zero, takes this preparation's net count below zero, or takes the line outside zero to ordered is `out_of_range` at `delta_quantity`; a lowering on a Ready or Completed order is `order_finished` there.
+- A count on a cancelled order can be corrected in either direction within those bounds. It never restores demand.
+- A stock correction for an ingredient the preparation did not use, or named twice, is reported at `ingredient_id`; a movement other than the preparation's own deduction at `corrects_movement_id` (`wrong_movement`); a zero, malformed or too large change at `delta_base_quantity`.
+- An empty correction is 422 at `/allocations` (`required`). At most 500 rows of each kind.
+- `GET /preparations/{id}/corrections` is not paged and takes no parameters.
 
 ## Backend Agreement Checklist
 

@@ -172,6 +172,8 @@ class Variant(Base):
     created_at: Mapped[datetime] = mapped_column(UtcInstant)
     updated_at: Mapped[datetime] = mapped_column(UtcInstant)
 
+    recipe: Mapped["Recipe | None"] = relationship(lazy="selectin")
+
 
 class AuditEvent(Base):
     """An append-only note of something done outside the ordinary record history."""
@@ -256,6 +258,8 @@ class OrderItem(Base):
     unit_price_minor: Mapped[int] = mapped_column(BigInteger)
     quantity: Mapped[int] = mapped_column(BigInteger)
     preparation_notes: Mapped[str] = mapped_column(Text)
+    # How many have been cooked. Null on an order tracked by hand, which keeps no count.
+    prepared_quantity: Mapped[int | None] = mapped_column(BigInteger)
     # Set when an edit removes the line. The row stays: order history is never deleted.
     removed_at: Mapped[datetime | None] = mapped_column(UtcInstant)
 
@@ -426,3 +430,171 @@ class Preview(Base):
     dependencies: Mapped[str] = mapped_column(Text)
     expires_at: Mapped[datetime] = mapped_column(UtcInstant, index=True)
     created_at: Mapped[datetime] = mapped_column(UtcInstant)
+
+
+class Recipe(Base):
+    """What goes into one selling unit of a variant. One recipe per variant."""
+
+    __tablename__ = "recipes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    version: Mapped[int] = mapped_column()
+    variant_id: Mapped[str] = mapped_column(ForeignKey("variants.id"), unique=True)
+    # The selling format the recipe was written for. If the variant's format changes, the
+    # recipe no longer describes it until it is saved again.
+    yield_selling_unit: Mapped[str] = mapped_column(String)
+    yield_package_quantity: Mapped[int | None] = mapped_column(BigInteger)
+    recorded_at: Mapped[datetime] = mapped_column(UtcInstant)
+    updated_at: Mapped[datetime] = mapped_column(UtcInstant)
+
+
+class RecipeItem(Base):
+    """One ingredient row of one version of a recipe. Rows of earlier versions are kept."""
+
+    __tablename__ = "recipe_items"
+
+    recipe_id: Mapped[str] = mapped_column(ForeignKey("recipes.id"), primary_key=True)
+    recipe_version: Mapped[int] = mapped_column(primary_key=True)
+    position: Mapped[int] = mapped_column(primary_key=True)
+    ingredient_id: Mapped[str] = mapped_column(ForeignKey("ingredients.id"), index=True)
+    # The quantity and unit as staff entered them, and what they come to in the base unit.
+    quantity: Mapped[str] = mapped_column(String)
+    unit: Mapped[str] = mapped_column(String)
+    base_thousandths: Mapped[int] = mapped_column(BigInteger)
+
+
+class Preparation(Base):
+    """What was cooked at one time, for which order lines, and what it took from the shelf.
+
+    Once saved it never changes. A mistake is put right by a correction beside it.
+    """
+
+    __tablename__ = "preparations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    prepared_on: Mapped[date] = mapped_column(Date, index=True)
+    note: Mapped[str] = mapped_column(Text)
+    currency: Mapped[str] = mapped_column(String)
+    minor_digits: Mapped[int] = mapped_column()
+    # What the ingredients used cost at the receipts of the day; null if any was never bought.
+    estimated_cost_minor: Mapped[int | None] = mapped_column(BigInteger)
+    operation_id: Mapped[str] = mapped_column(String, unique=True)
+    recorded_at: Mapped[datetime] = mapped_column(UtcInstant)
+    actor_id: Mapped[str] = mapped_column(String)
+    actor_display_name: Mapped[str] = mapped_column(String)
+
+    allocations: Mapped[list["PreparationAllocation"]] = relationship(
+        order_by="PreparationAllocation.position", lazy="selectin"
+    )
+    consumption: Mapped[list["PreparationConsumption"]] = relationship(
+        order_by="PreparationConsumption.position", lazy="selectin"
+    )
+
+
+class PreparationAllocation(Base):
+    """How many of one order line a preparation cooked, with the line as it then was."""
+
+    __tablename__ = "preparation_allocations"
+
+    preparation_id: Mapped[str] = mapped_column(ForeignKey("preparations.id"), primary_key=True)
+    position: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
+    order_item_id: Mapped[str] = mapped_column(ForeignKey("order_items.id"), index=True)
+    reference: Mapped[str] = mapped_column(String)
+    variant_id: Mapped[str] = mapped_column(String)
+    food_name: Mapped[str] = mapped_column(String)
+    variant_label: Mapped[str] = mapped_column(String)
+    selling_unit: Mapped[str] = mapped_column(String)
+    package_quantity: Mapped[int | None] = mapped_column(BigInteger)
+    quantity: Mapped[int] = mapped_column(BigInteger)
+    # The variant's recipe at the time, if it had one. Its rows of that version are kept.
+    recipe_id: Mapped[str | None] = mapped_column(String)
+    recipe_version: Mapped[int | None] = mapped_column()
+
+
+class PreparationConsumption(Base):
+    """What a preparation actually used of one ingredient, and the receipt that priced it."""
+
+    __tablename__ = "preparation_consumptions"
+
+    preparation_id: Mapped[str] = mapped_column(ForeignKey("preparations.id"), primary_key=True)
+    position: Mapped[int] = mapped_column(primary_key=True)
+    ingredient_id: Mapped[str] = mapped_column(ForeignKey("ingredients.id"), index=True)
+    ingredient_name: Mapped[str] = mapped_column(String)
+    base_unit: Mapped[str] = mapped_column(String)
+    # Quantity and unit exactly as staff entered them, and what that came to.
+    quantity: Mapped[str] = mapped_column(String)
+    unit: Mapped[str] = mapped_column(String)
+    base_thousandths: Mapped[int] = mapped_column(BigInteger)
+    before_thousandths: Mapped[int] = mapped_column(BigInteger)
+    after_thousandths: Mapped[int] = mapped_column(BigInteger)
+    stock_movement_id: Mapped[str] = mapped_column(ForeignKey("stock_movements.id"))
+    # The cost basis of the day: all four null when the ingredient had no usable price.
+    purchase_id: Mapped[str | None] = mapped_column(String)
+    purchase_line_id: Mapped[str | None] = mapped_column(String)
+    purchased_on: Mapped[date | None] = mapped_column(Date)
+    unit_cost: Mapped[str | None] = mapped_column(String)
+
+
+class PreparationCorrection(Base):
+    """A later change to what a preparation recorded. Corrections are only ever added."""
+
+    __tablename__ = "preparation_corrections"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    preparation_id: Mapped[str] = mapped_column(ForeignKey("preparations.id"), index=True)
+    sequence: Mapped[int] = mapped_column()
+    reason: Mapped[str] = mapped_column(Text)
+    operation_id: Mapped[str] = mapped_column(String, unique=True)
+    recorded_at: Mapped[datetime] = mapped_column(UtcInstant)
+    actor_id: Mapped[str] = mapped_column(String)
+    actor_display_name: Mapped[str] = mapped_column(String)
+
+    allocations: Mapped[list["CorrectionAllocation"]] = relationship(
+        order_by="CorrectionAllocation.position", lazy="selectin"
+    )
+    stock: Mapped[list["CorrectionStock"]] = relationship(
+        order_by="CorrectionStock.position", lazy="selectin"
+    )
+
+
+class CorrectionAllocation(Base):
+    """A change to the prepared count of one order line, with the count before and after."""
+
+    __tablename__ = "correction_allocations"
+
+    correction_id: Mapped[str] = mapped_column(
+        ForeignKey("preparation_corrections.id"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"))
+    order_item_id: Mapped[str] = mapped_column(ForeignKey("order_items.id"), index=True)
+    reference: Mapped[str] = mapped_column(String)
+    variant_id: Mapped[str] = mapped_column(String)
+    food_name: Mapped[str] = mapped_column(String)
+    variant_label: Mapped[str] = mapped_column(String)
+    selling_unit: Mapped[str] = mapped_column(String)
+    package_quantity: Mapped[int | None] = mapped_column(BigInteger)
+    ordered_quantity: Mapped[int] = mapped_column(BigInteger)
+    prepared_before: Mapped[int] = mapped_column(BigInteger)
+    delta_quantity: Mapped[int] = mapped_column(BigInteger)
+    prepared_after: Mapped[int] = mapped_column(BigInteger)
+
+
+class CorrectionStock(Base):
+    """A signed stock adjustment made by a correction, and the movement that carried it."""
+
+    __tablename__ = "correction_stock"
+
+    correction_id: Mapped[str] = mapped_column(
+        ForeignKey("preparation_corrections.id"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(primary_key=True)
+    ingredient_id: Mapped[str] = mapped_column(ForeignKey("ingredients.id"))
+    ingredient_name: Mapped[str] = mapped_column(String)
+    base_unit: Mapped[str] = mapped_column(String)
+    corrects_movement_id: Mapped[str] = mapped_column(ForeignKey("stock_movements.id"))
+    delta_thousandths: Mapped[int] = mapped_column(BigInteger)
+    before_thousandths: Mapped[int] = mapped_column(BigInteger)
+    after_thousandths: Mapped[int] = mapped_column(BigInteger)
+    stock_movement_id: Mapped[str] = mapped_column(ForeignKey("stock_movements.id"))
