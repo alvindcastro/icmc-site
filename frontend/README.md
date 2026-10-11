@@ -24,7 +24,7 @@ The fixture transport supports auth/session/settings, menu categories/foods/vari
 
 ## Live Backend Configuration
 
-Default `npm run dev` uses live requests to `/api/v1` and proxies `/api` to `http://127.0.0.1:8000`. The [backend](../backend/README.md) implements sign-in, sessions, business settings, the menu, orders with the dashboard, fulfillment steps, cancellation, payments and refunds so far: follow its setup, start it on port 8000, and `npm run dev` signs in as `admin` with the token its setup command printed. Ingredients, purchases, recipes, planning and preparation are not served yet; use `npm run dev:fixtures` to work on those. Optional `.env.local` settings:
+Default `npm run dev` uses live requests to `/api/v1` and proxies `/api` to `http://127.0.0.1:8000`. The [backend](../backend/README.md) implements sign-in, sessions, business settings, the menu, orders with the dashboard, fulfillment steps, cancellation, payments and refunds, ingredients, stock movements and purchases so far: follow its setup, start it on port 8000, and `npm run dev` signs in as `admin` with the token its setup command printed. Recipes, planning and preparation are not served yet; use `npm run dev:fixtures` to work on those. Optional `.env.local` settings:
 
 ```dotenv
 VITE_API_MODE=live

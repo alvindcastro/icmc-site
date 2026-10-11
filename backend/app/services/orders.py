@@ -14,7 +14,6 @@ from app.ids import new_id
 from app.listing import Page, PageQuery, page_of, select_page
 from app.persistence.models import (
     BusinessSettings,
-    Counter,
     Food,
     LedgerEntry,
     Order,
@@ -43,6 +42,7 @@ from app.schemas.orders import (
     TransitionIn,
 )
 from app.services import business_settings, business_time
+from app.services.counters import next_number
 from app.services.versions import advance, require_current
 from app.values import MAX_SAFE_INTEGER
 
@@ -671,22 +671,13 @@ def _write(order: Order, draft: DraftIn, result: Calculation, now: datetime) -> 
             item.removed_at = now
 
 
-def _next_number(db: Session, name: str) -> int:
-    counter = db.get(Counter, name)
-    if counter is None:
-        counter = Counter(name=name, value=0)
-        db.add(counter)
-    counter.value += 1
-    return counter.value
-
-
 def create(db: Session, body: OrderCreate, actor: StaffUser, now: datetime) -> Order:
     result = _agreed(db, body.quote_id, body.draft, None, None, now)
     # Development orders are marked as such in the reference staff and customers see.
     prefix = "ORD" if result.settings.environment == "live" else "DEV"
     order = Order(
         id=new_id("ord"),
-        reference=f"{prefix}-{_next_number(db, 'order_reference'):04d}",
+        reference=f"{prefix}-{next_number(db, 'order_reference'):04d}",
         version=1,
         status=body.initial_status,
         preparation_tracking="manual",

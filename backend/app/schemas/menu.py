@@ -1,37 +1,19 @@
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from app.actions import PermittedAction, allowed
-from app.errors import FieldError, invalid, pointer
 from app.listing import PageQuery
 from app.persistence.models import Category, Food, Variant
-from app.values import MAX_SAFE_INTEGER, Money, SellingQuantity
+from app.schemas.shared import Text, Update, entered
+from app.values import Money, SellingQuantity
 
 SellingUnit = Literal["tray", "piece", "stick", "package"]
 Confirmation = Literal["provisional", "confirmed"]
 
-
-def _named(message: str) -> AfterValidator:
-    """Trimmed, not blank, and at most 200 characters once trimmed."""
-
-    def check(value: str) -> str:
-        trimmed = value.strip()
-        if not trimmed:
-            raise PydanticCustomError("required", message)
-        if len(trimmed) > 200:
-            raise PydanticCustomError("too_long", "Use at most 200 characters.")
-        return trimmed
-
-    return AfterValidator(check)
-
-
-Text = Annotated[str, Field(strict=True)]
-FoodName = Annotated[Text, _named("Enter a food name.")]
-Label = Annotated[Text, _named("Enter a variant label.")]
+FoodName = Annotated[Text, entered(200, "Enter a food name.")]
+Label = Annotated[Text, entered(200, "Enter a variant label.")]
 Description = Annotated[str, Field(strict=True, max_length=2000)]
-Version = Annotated[int, Field(strict=True, ge=1, le=MAX_SAFE_INTEGER)]
 
 
 class PackageContents(BaseModel):
@@ -59,30 +41,6 @@ class VariantCreate(BaseModel):
     available: StrictBool
     # Always stated: the piece count for a package, null for every other unit.
     package_contents: PackageContents | None
-
-
-class Update(BaseModel):
-    """An edit: the version the editor saw, plus only the fields being changed."""
-
-    model_config = ConfigDict(extra="forbid")
-    nullable: ClassVar[frozenset[str]] = frozenset()
-
-    expected_version: Version
-
-    def changes(self) -> dict[str, Any]:
-        """The fields that were sent. Leaving a field out keeps it; sending null does not."""
-        sent = self.model_dump(exclude_unset=True, exclude={"expected_version"})
-        empty = [
-            name for name, value in sent.items() if value is None and name not in self.nullable
-        ]
-        if empty:
-            raise invalid(
-                *(
-                    FieldError(pointer(name), "required", "Give a value or leave this out.")
-                    for name in empty
-                )
-            )
-        return sent
 
 
 class FoodUpdate(Update):

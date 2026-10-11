@@ -25,6 +25,11 @@ TABLES = {
     "order_status_events",
     "quotes",
     "ledger_entries",
+    "ingredients",
+    "stock_movements",
+    "purchases",
+    "purchase_lines",
+    "previews",
 }
 
 

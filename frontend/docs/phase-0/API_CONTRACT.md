@@ -295,6 +295,19 @@ Operation successes use `resource_type: "ingredient"` for ingredient edits and m
 
 Conversions: 1 kg = 1000 g; 1 l = 1000 ml; piece to piece only. Packaging multiplies pack count by declared contents before compatible normalization. No density, count-to-weight, or implicit bag-size conversion. Example: 2 kg, 2400 USD minor units -> 2000 g, `0.012000000` USD/g and 12 USD/kg. Purchases and corrections update stock, but only purchases update purchase price history. Any correction to a receipt's physical quantity uses a linked stock correction; editing receipts or repricing historical purchases is outside the pilot.
 
+Backend refinement (2026-10-11), from implementing this section in backend Phase B5. None of it changes a request or response shape.
+
+- Quantity strings carry no padding zeros: `"2000"`, `"12.34"`, `"0"`. A receipt's `quantity` and `pack_contents.quantity` are returned exactly as entered. The example `"2000.000"` in the shared table is still a valid input.
+- Ingredient routes, price history included, need `inventory`; receipt routes need `purchases` as well. Either missing is 403 `action_forbidden`. In a live system every one of them, reading included, is 409 `settings_unconfirmed` until currency and timezone are confirmed.
+- Creating and editing an ingredient need an operation key. A PATCH cannot name `base_unit`. `low_stock_threshold` may be null in both.
+- A movement is checked in this order: the entry itself (a nonzero change with the right sign for its type, a reason, no preparation link while recording is off, a related movement of the same ingredient), then the version (409 `version_conflict`), then the shelf as it is now: opening stock only while the ingredient has no movement of any kind, purchases included (`/type`, code `opening_used`), and never less than nothing left (`/delta_base_quantity`, code `insufficient_stock`).
+- A preview is spent by the save it backs. "The same input" is compared after validation, so `100` and `100.000`, surrounding spaces and an omitted empty note are not differences. An unknown, expired, spent or different preview is 409 `quote_stale`.
+- Purchase rows: an unknown ingredient is reported at `ingredient_id`; a quantity that is zero, fractional for packs or pieces, or too large at `quantity`; a unit of another dimension at `unit` (`incompatible_unit`); missing, zero or misplaced pack contents at `pack_contents/quantity`; a repeated row identifier at its `client_line_id`; a receipt total beyond the safe bound at `/draft/items`.
+- At the save, an ingredient that changed since the preview is 409 `version_conflict` naming that ingredient, with the latest record; a changed settings version is `quote_stale`. Nothing of the receipt is kept in either case.
+- Receipt references are `DEV-P0001`, ... under development settings and `PUR-...` under live ones. The supplier is trimmed; the note is kept as typed.
+- Movements of one second are listed in the order they were made, newest first, and receipts of one purchase date newest entry first; the ID is the last tie-breaker in both.
+- `recorded_by` on movements and receipts is the display-name string.
+
 ## Recipes and Cost Estimates (Phase 6)
 
 Recipe: `{id, version, variant_id, yield: {quantity: 1, selling_unit, package_contents}, items: [{ingredient_id, quantity, unit}], recorded_at, updated_at}`. Yield is exactly one current sellable variant; a 100-piece package recipe describes all 100 pieces. Each tray size gets its own recipe; no inferred ratios. Ingredient rows are unique by ingredient ID, positive and compatible with its base dimension. Empty ingredient lists are not complete recipes.

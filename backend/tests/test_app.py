@@ -25,8 +25,8 @@ def test_health_stays_outside_the_versioned_api(client: TestClient) -> None:
 
 
 def test_contract_routes_not_built_yet_are_not_found(client: TestClient) -> None:
-    assert client.get("/api/v1/ingredients").status_code == 404
-    assert client.get("/api/v1/purchases").status_code == 404
+    assert client.get("/api/v1/planning").status_code == 404
+    assert client.get("/api/v1/preparations/prep_1").status_code == 404
 
 
 def test_api_description_is_served_by_default(client: TestClient) -> None:

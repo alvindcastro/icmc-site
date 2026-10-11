@@ -78,8 +78,10 @@ def parse_quantity(text: object, unit: str, *, signed: bool = False) -> int:
 
 
 def format_quantity(thousandths: int) -> str:
+    """An exact quantity as staff read it: no padding zeros, so 2000 g and not 2000.000 g."""
     whole, fraction = divmod(abs(thousandths), 1000)
-    return f"{'-' if thousandths < 0 else ''}{whole}.{fraction:03}"
+    text = f"{whole}.{fraction:03}".rstrip("0").rstrip(".")
+    return f"-{text}" if thousandths < 0 else text
 
 
 def format_unit_cost(cost: Decimal | None) -> str | None:

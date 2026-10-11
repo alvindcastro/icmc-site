@@ -313,3 +313,116 @@ class LedgerEntry(Base):
     recorded_at: Mapped[datetime] = mapped_column(UtcInstant)
     actor_id: Mapped[str] = mapped_column(String)
     actor_display_name: Mapped[str] = mapped_column(String)
+
+
+class Ingredient(Base):
+    __tablename__ = "ingredients"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    version: Mapped[int] = mapped_column()
+    name: Mapped[str] = mapped_column(String)
+    name_key: Mapped[str] = mapped_column(String, index=True)
+    # Grams, millilitres or pieces. Every quantity of the ingredient is in thousandths of it.
+    base_unit: Mapped[str] = mapped_column(String)
+    threshold_thousandths: Mapped[int | None] = mapped_column(BigInteger)
+    # Kept equal to the sum of the ingredient's movements by the one function that adds them.
+    stock_thousandths: Mapped[int] = mapped_column(BigInteger)
+    movement_count: Mapped[int] = mapped_column()
+    # The receipt line that is the current cost basis: the latest by purchase date.
+    latest_line_id: Mapped[str | None] = mapped_column(
+        ForeignKey("purchase_lines.id", use_alter=True)
+    )
+    created_at: Mapped[datetime] = mapped_column(UtcInstant)
+    updated_at: Mapped[datetime] = mapped_column(UtcInstant)
+
+    latest_line: Mapped["PurchaseLine | None"] = relationship(
+        foreign_keys=[latest_line_id], lazy="selectin"
+    )
+
+
+class StockMovement(Base):
+    """One change to physical stock. Movements are only ever added."""
+
+    __tablename__ = "stock_movements"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    ingredient_id: Mapped[str] = mapped_column(ForeignKey("ingredients.id"), index=True)
+    sequence: Mapped[int] = mapped_column()
+    delta_thousandths: Mapped[int] = mapped_column(BigInteger)
+    before_thousandths: Mapped[int] = mapped_column(BigInteger)
+    after_thousandths: Mapped[int] = mapped_column(BigInteger)
+    type: Mapped[str] = mapped_column(String)
+    reason: Mapped[str] = mapped_column(Text)
+    purchase_id: Mapped[str | None] = mapped_column(ForeignKey("purchases.id"), index=True)
+    preparation_id: Mapped[str | None] = mapped_column(String, index=True)
+    corrects_movement_id: Mapped[str | None] = mapped_column(ForeignKey("stock_movements.id"))
+    operation_id: Mapped[str] = mapped_column(String, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(UtcInstant)
+    actor_id: Mapped[str] = mapped_column(String)
+    actor_display_name: Mapped[str] = mapped_column(String)
+
+
+class Purchase(Base):
+    """A receipt. Once saved it never changes."""
+
+    __tablename__ = "purchases"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    reference: Mapped[str] = mapped_column(String, unique=True)
+    # The running number inside the reference, which also orders receipts of one day.
+    number: Mapped[int] = mapped_column(BigInteger)
+    purchased_on: Mapped[date] = mapped_column(Date, index=True)
+    supplier: Mapped[str] = mapped_column(String)
+    supplier_key: Mapped[str] = mapped_column(String)
+    search_key: Mapped[str] = mapped_column(Text)
+    note: Mapped[str] = mapped_column(Text)
+    currency: Mapped[str] = mapped_column(String)
+    minor_digits: Mapped[int] = mapped_column()
+    total_cost_minor: Mapped[int] = mapped_column(BigInteger)
+    operation_id: Mapped[str] = mapped_column(String, unique=True)
+    recorded_at: Mapped[datetime] = mapped_column(UtcInstant)
+    actor_id: Mapped[str] = mapped_column(String)
+    actor_display_name: Mapped[str] = mapped_column(String)
+
+    lines: Mapped[list["PurchaseLine"]] = relationship(
+        order_by="PurchaseLine.position", lazy="selectin", back_populates="purchase"
+    )
+
+
+class PurchaseLine(Base):
+    __tablename__ = "purchase_lines"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    purchase_id: Mapped[str] = mapped_column(ForeignKey("purchases.id"), index=True)
+    position: Mapped[int] = mapped_column()
+    ingredient_id: Mapped[str] = mapped_column(ForeignKey("ingredients.id"), index=True)
+    # The ingredient as it was named and measured when the receipt was saved.
+    ingredient_name: Mapped[str] = mapped_column(String)
+    base_unit: Mapped[str] = mapped_column(String)
+    # Quantity, unit and pack contents exactly as staff entered them.
+    quantity: Mapped[str] = mapped_column(String)
+    unit: Mapped[str] = mapped_column(String)
+    pack_quantity: Mapped[str | None] = mapped_column(String)
+    pack_unit: Mapped[str | None] = mapped_column(String)
+    # What that came to, and what it cost: the exact cost basis, never a rounded unit cost.
+    base_thousandths: Mapped[int] = mapped_column(BigInteger)
+    total_cost_minor: Mapped[int] = mapped_column(BigInteger)
+    stock_movement_id: Mapped[str] = mapped_column(ForeignKey("stock_movements.id"))
+
+    purchase: Mapped["Purchase"] = relationship(back_populates="lines", lazy="joined")
+
+
+class Preview(Base):
+    """A reviewed stock movement or receipt, waiting up to five minutes to be saved."""
+
+    __tablename__ = "previews"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    kind: Mapped[str] = mapped_column(String)
+    # The ingredient a movement preview is for; empty for a receipt.
+    subject_id: Mapped[str] = mapped_column(String)
+    input_fingerprint: Mapped[str] = mapped_column(String)
+    # The versions the result was calculated from, as JSON.
+    dependencies: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(UtcInstant, index=True)
+    created_at: Mapped[datetime] = mapped_column(UtcInstant)

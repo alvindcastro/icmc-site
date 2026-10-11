@@ -78,6 +78,18 @@ Combined verification after all Phase 1-5 review fixes:
 - [ ] Screenshot review and the uninstrumented fixture-preview walkthrough were not repeated for these fixes.
 - [x] Committed on 2026-10-10 in the repository's initial commit. Nothing had been committed while these fixes were verified.
 
+## Live Verification Against the Local Backend (2026-10-11)
+
+Backend Phase B5 delivered ingredients, stock movements and purchases, so the Phase 5 screens were run in live mode against the real FastAPI server through the development proxy. One answer was deliberately dropped; nothing else was intercepted. The steps and results are in the [backend Phase B5 record](../../../backend/docs/phase-5/VERIFICATION.md#live-verification); the script is `.playwright/phase5-live.mjs`.
+
+Seen working in the browser: two ingredients added through the form; a 2 kg purchase reviewed as 2000 g, saved with a lost answer and reconciled by "Check save status" to one receipt; three declared 25 kg bags reviewed as 75000 g; a reviewed waste entry; a linked correction shown in the movement history with its "Corrected movement" link; the latest unit cost, price history and receipt list; and the server's reason shown under the disabled Opening stock action. No frontend change was needed.
+
+Sent as requests from the signed-in browser session rather than typed into a form: an incompatible unit, a repeated purchase request, and the linked correction itself.
+
+The live server writes quantities without padding zeros ("77400 g"), as the fixture does.
+
+Still open for this gate: agreement on the refined contract, confirmed currency and timezone, actual ingredient and opening-stock data, and a staff walkthrough. Nothing was run on Windows.
+
 ## Live Handoff
 
 - [ ] Close relevant Phase 0 business/staff confirmations and earlier-phase live gates before real use; obtain backend acceptance of the refined inventory/purchase/operation contract.

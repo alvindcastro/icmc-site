@@ -6,7 +6,8 @@ from pydantic_core import PydanticCustomError
 
 from app.actions import PermittedAction
 from app.listing import Page, PageQuery
-from app.schemas.menu import PackageContents, SellingUnit, Version
+from app.schemas.menu import PackageContents, SellingUnit
+from app.schemas.shared import Notes, Text, Version, entered
 from app.values import MAX_SAFE_INTEGER, CalendarDate, Instant, Money, SellingQuantity
 
 OrderStatus = Literal["pending", "confirmed", "preparing", "ready", "completed", "cancelled"]
@@ -15,28 +16,12 @@ Method = Literal["pickup", "delivery"]
 STATUSES: tuple[str, ...] = ("pending", "confirmed", "preparing", "ready", "completed", "cancelled")
 
 
-def _entered(limit: int, message: str) -> AfterValidator:
-    """Trimmed, not blank, and at most `limit` characters once trimmed."""
-
-    def check(value: str) -> str:
-        trimmed = value.strip()
-        if not trimmed:
-            raise PydanticCustomError("required", message)
-        if len(trimmed) > limit:
-            raise PydanticCustomError("too_long", f"Use at most {limit} characters.")
-        return trimmed
-
-    return AfterValidator(check)
-
-
 def _at_least_one(items: list["ItemIn"]) -> list["ItemIn"]:
     if not items:
         raise PydanticCustomError("required", "Add at least one item.")
     return items
 
 
-Text = Annotated[str, Field(strict=True)]
-Notes = Annotated[str, Field(strict=True, max_length=2000)]
 LocalTime = Annotated[str, Field(strict=True, pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
 Offset = Annotated[str, Field(strict=True, pattern=r"^[+-][0-9]{2}:[0-9]{2}$")]
 Address = Annotated[str, Field(strict=True, max_length=1000), AfterValidator(str.strip)]
@@ -45,8 +30,8 @@ Address = Annotated[str, Field(strict=True, max_length=1000), AfterValidator(str
 class CustomerIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[Text, _entered(200, "Enter the customer name.")]
-    phone: Annotated[Text, _entered(50, "Enter a contact phone.")]
+    name: Annotated[Text, entered(200, "Enter the customer name.")]
+    phone: Annotated[Text, entered(50, "Enter a contact phone.")]
     notes: Notes = ""
 
 
@@ -66,7 +51,7 @@ class FulfillmentIn(BaseModel):
 class ItemIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    client_line_id: Annotated[Text, _entered(200, "Give each item row an identifier.")]
+    client_line_id: Annotated[Text, entered(200, "Give each item row an identifier.")]
     # Present for a line the order already has; such a line keeps its agreed snapshot.
     order_item_id: Text | None = None
     variant_id: Text
@@ -124,7 +109,7 @@ class CancelIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: Version
-    reason: Annotated[Text, _entered(1000, "Enter a reason.")]
+    reason: Annotated[Text, entered(1000, "Enter a reason.")]
     # Must be true once preparation has consumed stock, which cancelling never returns.
     acknowledge_consumed_stock: StrictBool
 
@@ -153,7 +138,7 @@ class RefundIn(BaseModel):
     amount_minor: Amount
     refunded_on: CalendarDate
     method: PaymentMethod
-    reason: Annotated[Text, _entered(1000, "Enter a reason.")]
+    reason: Annotated[Text, entered(1000, "Enter a reason.")]
     reference: Reference = ""
     note: Notes = ""
 

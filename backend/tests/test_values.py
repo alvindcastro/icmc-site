@@ -125,9 +125,19 @@ def test_signed_quantities_are_accepted_only_where_a_change_is_expected() -> Non
 
 @pytest.mark.parametrize(
     ("thousandths", "text"),
-    [(0, "0.000"), (1, "0.001"), (2_000_000, "2000.000"), (-5_250, "-5.250"), (999, "0.999")],
+    [
+        (0, "0"),
+        (1, "0.001"),
+        (500, "0.5"),
+        (2_000_000, "2000"),
+        (12_340, "12.34"),
+        (-5_250, "-5.25"),
+        (999, "0.999"),
+        (MAX_SAFE_INTEGER * 1000, "9007199254740991"),
+    ],
 )
-def test_quantities_are_written_with_three_decimals(thousandths: int, text: str) -> None:
+def test_quantities_are_written_exactly_without_padding(thousandths: int, text: str) -> None:
+    # Staff read these strings as they are, so 2000 g is not shown as 2000.000 g.
     assert format_quantity(thousandths) == text
     assert parse_quantity(text, "g", signed=True) == thousandths
 
