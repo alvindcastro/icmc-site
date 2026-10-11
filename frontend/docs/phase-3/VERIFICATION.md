@@ -68,6 +68,18 @@ Two unit tests passed only while the business date was 2026-10-10, the date of t
 
 The tests now set the date with one change event, as a browser's date field does and as the planning tests already did. No application code changed. Observed red: both failed on 2026-10-11, in CI and locally. Green: 382 unit tests in 33 files and 73 Chromium checks pass on 2026-10-11. No other test in either suite failed with the date change; the suite has not been run under any other simulated date.
 
+## Live Verification Against the Local Backend (2026-10-11)
+
+Backend Phase B3 delivered orders, quotes and the dashboard, so the Phase 3 screens were run in live mode against the real FastAPI server through the development proxy, with no interception. The steps and results are in the [backend Phase B3 record](../../../backend/docs/phase-3/VERIFICATION.md#live-verification); the script is `.playwright/phase3-live.mjs`.
+
+Seen working in the browser: two trays and a package quoted and saved at 215.00; the saved order unchanged after the menu's price, name and availability were changed; two browsers editing one order, with the later save refused, its draft kept, and the conflict resolved by explicit review; the agreed line price kept through both edits; an order saved as pending and confirmed as a separate step; search; the dashboard for a chosen business date; a repeated hour resolved by the chosen offset and a skipped hour refused. No frontend change was needed.
+
+Because the backend does not serve Phase 4 yet, it reports the later fulfillment steps, cancellation and payments as unavailable on every order, each with a reason. How the order page presents those reasons was not reviewed in this run.
+
+Covered by the backend's own tests rather than the browser: stale and expired quotes at the save, a lost answer on an order save, live settings with unconfirmed values, and delivery orders.
+
+Still open for this gate: agreement on the refined contract, the business and menu confirmations, and a staff walkthrough. Nothing was run on Windows.
+
 ## Live Handoff
 
 - [ ] Agree on order/quote/confirmation/operation refinements and confirm business currency/timezone, fulfillment/charge/tax policies, menu transcription, and staff provisioning.

@@ -9,15 +9,10 @@ class Versioned(Protocol):
     version: int
 
 
-def advance(
+def require_current(
     record: Versioned, expected: int, resource_type: str, latest: Callable[[], Any]
 ) -> None:
-    """Move a record to its next version, provided the caller saw the current one.
-
-    Called inside the write transaction that makes the change, so the comparison and the
-    increment cannot be separated. A stale caller gets the complete current record back and
-    nothing is changed.
-    """
+    """Refuse a caller who has not seen the record as it is now, handing back the latest."""
     if record.version != expected:
         raise ApiError(
             409,
@@ -31,4 +26,16 @@ def advance(
                 "latest_resource": latest(),
             },
         )
+
+
+def advance(
+    record: Versioned, expected: int, resource_type: str, latest: Callable[[], Any]
+) -> None:
+    """Move a record to its next version, provided the caller saw the current one.
+
+    Called inside the write transaction that makes the change, so the comparison and the
+    increment cannot be separated. A stale caller gets the complete current record back and
+    nothing is changed.
+    """
+    require_current(record, expected, resource_type, latest)
     record.version += 1

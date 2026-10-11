@@ -1,6 +1,6 @@
 # Backend Implementation Plan
 
-Status: Draft written 2026-10-10. Phase B0's scaffold ([verification record](docs/phase-0/VERIFICATION.md)), Phase B1 ([verification record](docs/phase-1/VERIFICATION.md)) and Phase B2 ([verification record](docs/phase-2/VERIFICATION.md)) were delivered the same day: sign-in, sessions, CSRF, business settings, version checks, durable operation keys and the menu exist and were checked with the frontend in live mode. Phases B3-B8 are untouched, so the menu is the only workflow served yet. The frontend for Phases 1-7 exists and is otherwise verified only against development fixtures; this backend is what turns those fixtures into a real system. Scope decided 2026-10-10: this is a local project for now.
+Status: Draft written 2026-10-10. Phase B0's scaffold ([verification record](docs/phase-0/VERIFICATION.md)), Phase B1 ([verification record](docs/phase-1/VERIFICATION.md)) and Phase B2 ([verification record](docs/phase-2/VERIFICATION.md)) were delivered the same day, and Phase B3 ([verification record](docs/phase-3/VERIFICATION.md)) on 2026-10-11: sign-in, sessions, CSRF, business settings, version checks, durable operation keys, the menu, and orders with quotes, snapshots and the dashboard exist and were checked with the frontend in live mode. Phases B4-B8 are untouched, so an order can be created, edited and confirmed but not yet prepared, paid or cancelled. The frontend for Phases 1-7 exists and is otherwise verified only against development fixtures; this backend is what turns those fixtures into a real system. Scope decided 2026-10-10: this is a local project for now.
 
 Sources: [MVP checklist](../food_reservation_mvp_checklist.md), [API contract proposal](../frontend/docs/phase-0/API_CONTRACT.md), [decision register](../frontend/docs/phase-0/DECISIONS.md), [acceptance scenarios](../frontend/docs/phase-0/ACCEPTANCE.md), and the [frontend plan](../frontend/FRONTEND_IMPLEMENTATION_PLAN.md) with its open live completion gates.
 
@@ -138,7 +138,7 @@ Purpose: Everything later phases stand on, plus a real sign-in. Contract: [share
 - [x] Add operator commands to set currency and minor digits, timezone (validated as a real zone), fulfillment methods, pickup location, delivery policy, tax policy, payment methods, capabilities and environment. Each change increases the settings version. `food-admin settings set` and `settings show`. A command that changes nothing leaves the version alone.
 - [x] Add a separate operator command to confirm currency, timezone, fulfillment, delivery and tax, recording when. Nothing is confirmed by default. `food-admin settings confirm`. Changing a confirmed value withdraws that group's confirmation.
 - [x] In the live environment, fail closed: reservation and financial mutations return 409 `settings_unconfirmed` until the relevant confirmations are true. The guard is built and tested with a stand-in mutation, and names the unconfirmed groups in `details`. No reservation or financial mutation exists yet; Phase B3 applies it to quotes and saves.
-- [x] Start with every capability off and enable each only when its backend phase is released. The server holds the set of released workflows: empty in Phase B1, `menu` since Phase B2. One outside it can be neither enabled nor reported as on.
+- [x] Start with every capability off and enable each only when its backend phase is released. The server holds the set of released workflows: empty in Phase B1, `menu` since Phase B2, `orders` since Phase B3. One outside it can be neither enabled nor reported as on.
 
 Completion check: Against the real server, sign in by keyboard, let a session expire, sign out with and without a lost response, try a wrong token, and return to a protected route. Tick the frontend Phase 1 live items. Done on 2026-10-10 against the local server through the development proxy; see the [verification record](docs/phase-1/VERIFICATION.md). The frontend's Phase 1 gate stays unticked because it also asks for the business confirmations and a staff walkthrough.
 
@@ -186,34 +186,34 @@ Purpose: Reservations whose prices never change after they are agreed. Contract:
 
 ### Business time
 
-- [ ] Resolve local fulfillment date and time in the settings timezone. Reject a different timezone, reject a time that does not exist, and for a time that occurs twice return a field error at `/draft/fulfillment/utc_offset` with `details.utc_offsets` unless a valid offset was supplied.
-- [ ] Return `fulfillment_at` in UTC together with the chosen `utc_offset`, and use the business timezone for "today", date filters and dashboard grouping.
+- [x] Resolve local fulfillment date and time in the settings timezone. Reject a different timezone, reject a time that does not exist, and for a time that occurs twice return a field error at `/draft/fulfillment/utc_offset` with `details.utc_offsets` unless a valid offset was supplied. A skipped time is reported at `/draft/fulfillment/local_time`, and an offset that does not fit the time at `/draft/fulfillment/utc_offset`.
+- [x] Return `fulfillment_at` in UTC together with the chosen `utc_offset`, and use the business timezone for "today", date filters and dashboard grouping. Orders store the business-local date beside the instant, so date filters never depend on a conversion.
 
 ### Quotes
 
-- [ ] `POST /orders/quote` validates the draft: customer name up to 200 and phone up to 50 characters, notes up to 2000, address and preparation notes up to 1000, at least one item, unique `client_line_id`, positive whole quantities, delivery address required for delivery and null for pickup.
-- [ ] Price new lines from the current variant and snapshot its food name, label, unit, package contents and price. Lines carrying an existing `order_item_id` keep their saved snapshot whatever the menu says now.
-- [ ] Apply the delivery and tax policy: zero charge for pickup, a validated manual amount, a backend-supplied fixed charge, or a rejection at `/draft/fulfillment/method` when delivery is disabled.
-- [ ] In the live environment require confirmed settings, and require an available, confirmed variant of an available food for any new, increased or swapped line. Existing unavailable lines may stay, decrease or change notes.
-- [ ] Store the quote with a five-minute expiry, bound to the exact draft, the settings version, the order version when editing, and the versions of newly priced variants.
-- [ ] Return the quote shape with subtotal, delivery, tax, total, net paid, balance due, customer credit and `credit_acknowledgment_required`.
+- [x] `POST /orders/quote` validates the draft: customer name up to 200 and phone up to 50 characters, notes up to 2000, address and preparation notes up to 1000, at least one item, unique `client_line_id`, positive whole quantities, delivery address required for delivery and null for pickup. Names, phone and address are trimmed. A row identifier that repeats is reported at its own `client_line_id`; a saved line that is unknown, swapped or repeated is reported at `variant_id`, where the frontend shows it.
+- [x] Price new lines from the current variant and snapshot its food name, label, unit, package contents and price. Lines carrying an existing `order_item_id` keep their saved snapshot whatever the menu says now. A saved line keeps its price even when its quantity grows.
+- [x] Apply the delivery and tax policy: zero charge for pickup, a validated manual amount, a backend-supplied fixed charge, or a rejection at `/draft/fulfillment/method` when delivery is disabled. A method the business does not offer is refused at the same field.
+- [x] In the live environment require confirmed settings, and require an available, confirmed variant of an available food for any new, increased or swapped line. Existing unavailable lines may stay, decrease or change notes. Unconfirmed settings answer 409 `settings_unconfirmed` naming the groups, and an unconfirmed food or variant 409 `menu_unconfirmed`. A new or growing line of an unavailable variant is a field error at its `variant_id` in every environment.
+- [x] Store the quote with a five-minute expiry, bound to the exact draft, the settings version, the order version when editing, and the versions of newly priced variants. The binding also covers the version of each newly priced variant's food, because the food's name is part of the snapshot. Expired quotes are cleared as new ones arrive.
+- [x] Return the quote shape with subtotal, delivery, tax, total, net paid, balance due, customer credit and `credit_acknowledgment_required`.
 
 ### Saving
 
-- [ ] `POST /orders` requires the quote, the identical draft, `initial_status`, `acknowledge_credit` and an operation key. Re-check the quote's binding and expiry inside the transaction and answer a changed dependency with 409 `quote_stale` and no save.
-- [ ] Create the order with a human-readable reference, snapshot lines, totals, version 1 and status history. A confirmed creation records Pending then Confirmed in one transaction.
-- [ ] `PUT /orders/{id}` requires `expected_version` and a fresh quote, is allowed only for Pending and Confirmed orders, keeps the identity and snapshots of retained lines, removes omitted lines, requires credit acknowledgment when the quote says so, and never changes status.
-- [ ] `POST /orders/{id}/transitions` with `to_status: "confirmed"` confirms a pending order.
-- [ ] Return the full order shape, including all nine `permitted_actions` with reasons, `preparation_tracking: "manual"`, null prepared and remaining quantities, and `cancellation_requires_stock_acknowledgment: false` while preparation recording is off.
-- [ ] Mark each variant as used when it first appears on a saved order.
+- [x] `POST /orders` requires the quote, the identical draft, `initial_status`, `acknowledge_credit` and an operation key. Re-check the quote's binding and expiry inside the transaction and answer a changed dependency with 409 `quote_stale` and no save. "Identical" is judged on the validated draft, so surrounding spaces or an omitted empty note do not matter. A quote is spent by the save it buys.
+- [x] Create the order with a human-readable reference, snapshot lines, totals, version 1 and status history. A confirmed creation records Pending then Confirmed in one transaction. References count up from 0001 with the prefix `DEV-` under development settings and `ORD-` under live ones.
+- [x] `PUT /orders/{id}` requires `expected_version` and a fresh quote, is allowed only for Pending and Confirmed orders, keeps the identity and snapshots of retained lines, removes omitted lines, requires credit acknowledgment when the quote says so, and never changes status. A line edited away is marked removed, not deleted. The credit acknowledgment is enforced in code but cannot occur until Phase B4 records payments.
+- [x] `POST /orders/{id}/transitions` with `to_status: "confirmed"` confirms a pending order. Every other step answers 409 `action_not_allowed` until Phase B4.
+- [x] Return the full order shape, including all nine `permitted_actions` with reasons, `preparation_tracking: "manual"`, null prepared and remaining quantities, and `cancellation_requires_stock_acknowledgment: false` while preparation recording is off. Until Phase B4 the later fulfillment steps and cancellation are reported as blocked with reason code `not_released`, and payments as `payments_disabled`.
+- [x] Mark each variant as used when it first appears on a saved order.
 
 ### Reading
 
-- [ ] `GET /orders` with `q` over customer name, phone and reference, inclusive `date_from` and `date_to` on the business date, comma-separated `status`, `sort=fulfillment_asc|fulfillment_desc` and pagination, returning summaries.
-- [ ] `GET /orders/{id}` returns the full order.
-- [ ] `GET /dashboard` with an optional `date` returns `{business_date, timezone, today, upcoming}`. `today` excludes Cancelled and includes Completed; `upcoming` is after that date and excludes Cancelled and Completed. Each is a paginated collection of the first 25.
+- [x] `GET /orders` with `q` over customer name, phone and reference, inclusive `date_from` and `date_to` on the business date, comma-separated `status`, `sort=fulfillment_asc|fulfillment_desc` and pagination, returning summaries. Descending order reverses the ID tie-breaker too, so paging is stable both ways.
+- [x] `GET /orders/{id}` returns the full order.
+- [x] `GET /dashboard` with an optional `date` returns `{business_date, timezone, today, upcoming}`. `today` excludes Cancelled and includes Completed; `upcoming` is after that date and excludes Cancelled and Completed. Each is a paginated collection of the first 25.
 
-Completion check: Two medium Beef Caldereta trays and one 100-piece Shanghai package give a subtotal of 21500. Change the menu price, name and availability and confirm the saved order is unchanged. Have two staff edit the same order and confirm nothing is lost. Tick the frontend Phase 3 live items.
+Completion check: Two medium Beef Caldereta trays and one 100-piece Shanghai package give a subtotal of 21500. Change the menu price, name and availability and confirm the saved order is unchanged. Have two staff edit the same order and confirm nothing is lost. Tick the frontend Phase 3 live items. Done on 2026-10-11 against the local server; see the [verification record](docs/phase-3/VERIFICATION.md). The frontend's Phase 3 gate stays unticked because it also needs the business confirmations and a staff walkthrough.
 
 ## Phase B4: Status and Payments
 

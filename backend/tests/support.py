@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -74,3 +75,15 @@ def set_cookie(response: Response, name: str) -> dict[str, str]:
         key, _, setting = attribute.partition("=")
         parsed[key.lower()] = setting
     return parsed
+
+
+def keyed(client: Any, method: str, path: str, body: Any, key: str | None = None) -> Response:
+    """Send a keyed mutation, with a new operation key unless one is given."""
+    response: Response = client.request(
+        method, f"{API}{path}", json=body, headers={"Idempotency-Key": key or str(uuid.uuid4())}
+    )
+    return response
+
+
+def field_paths(response: Response) -> set[str]:
+    return {field["path"] for field in error_of(response, 422, "validation_failed")["field_errors"]}

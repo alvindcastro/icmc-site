@@ -22,7 +22,7 @@ CAPABILITIES = (
 )
 # Workflows this version of the server actually implements. Each backend phase adds its own;
 # nothing outside this set can be switched on or is ever reported as on.
-RELEASED: frozenset[str] = frozenset({"menu"})
+RELEASED: frozenset[str] = frozenset({"menu", "orders"})
 
 ENVIRONMENTS = ("development", "live")
 FULFILLMENT_METHODS = ("pickup", "delivery")

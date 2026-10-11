@@ -1,6 +1,6 @@
 # Food Reservations Backend
 
-The Python/FastAPI backend the [frontend](../frontend/README.md) targets. Phases B1 and B2 are delivered: staff can sign in with the interim `admin` token, sessions expire and can be signed out, business settings are served, and the menu can be read and edited with version checks and durable operation keys. No other area of the [API contract](../frontend/docs/phase-0/API_CONTRACT.md) exists yet, so the frontend in live mode offers the menu and nothing else until Phase B3 adds orders. Work is tracked in the [backend plan](BACKEND_IMPLEMENTATION_PLAN.md). This is a local project for now: it runs on the developer's machine only.
+The Python/FastAPI backend the [frontend](../frontend/README.md) targets. Phases B1 to B3 are delivered: staff can sign in with the interim `admin` token, sessions expire and can be signed out, business settings are served, the menu can be read and edited with version checks and durable operation keys, and orders can be quoted, saved, edited and confirmed, with a dashboard by business date. Fulfillment steps, cancellation and payments arrive with Phase B4; nothing after that exists yet. The [API contract](../frontend/docs/phase-0/API_CONTRACT.md) describes each area. Work is tracked in the [backend plan](BACKEND_IMPLEMENTATION_PLAN.md). This is a local project for now: it runs on the developer's machine only.
 
 ## Requirements and Setup
 
@@ -15,14 +15,14 @@ uv run food-admin setup-local
 
 - `uv sync` creates `.venv` with the versions pinned in `uv.lock`.
 - `.env` holds the local settings. It allows the session cookie over plain HTTP, which this machine needs and a hosted system must not have. Git ignores it.
-- `setup-local` creates `food-reservations.db` in this directory (git ignores it too), sets the `admin` token, creates provisional development settings with the menu enabled, and seeds the provisional menu. It prints the token once: store it, because only a salted hash is kept. Running it again changes nothing.
+- `setup-local` creates `food-reservations.db` in this directory (git ignores it too), sets the `admin` token, creates provisional development settings with the menu and orders enabled, and seeds the provisional menu. It prints the token once: store it, because only a salted hash is kept. Running it again changes nothing.
 
 The provisional settings and menu are the decision register's unconfirmed assumptions (USD, America/Los_Angeles, the five known menu rows). Nothing is confirmed, and the frontend labels it provisional. To choose your own values instead, run the steps separately before `setup-local`, or change them afterwards:
 
 ```powershell
 uv run food-admin migrate
 uv run food-admin token set
-uv run food-admin settings set --currency USD --minor-digits 2 --timezone America/Los_Angeles --fulfillment "pickup,delivery" --delivery-mode manual_amount --payment-methods "cash,bank_transfer,other" --enable menu
+uv run food-admin settings set --currency USD --minor-digits 2 --timezone America/Los_Angeles --fulfillment "pickup,delivery" --delivery-mode manual_amount --payment-methods "cash,bank_transfer,other" --enable menu --enable orders
 ```
 
 Keep the quotes around the comma-separated values: PowerShell otherwise splits them into separate arguments. `token set` asks twice for a token of at least 12 characters; `token set --generate` creates one and prints it once.
@@ -38,7 +38,7 @@ uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --relo
 - The server refuses to start on a database that was never migrated and says which command to run.
 - Do not pass `--no-date-header`. The frontend reads the `Date` header to judge session deadlines.
 
-To use it with the frontend, keep the server running and start the frontend in live mode from `frontend/` with `npm run dev`, then open `http://127.0.0.1:5173` and sign in as `admin`. The Menu link appears because the menu is enabled. The frontend's development server forwards `/api` to `127.0.0.1:8000`, so the browser sees one origin. `npm run dev:fixtures` does not use this backend.
+To use it with the frontend, keep the server running and start the frontend in live mode from `frontend/` with `npm run dev`, then open `http://127.0.0.1:5173` and sign in as `admin`. Menu, Orders and Dashboard appear because those workflows are enabled. The frontend's development server forwards `/api` to `127.0.0.1:8000`, so the browser sees one origin. `npm run dev:fixtures` does not use this backend.
 
 ## Operator Commands
 
@@ -65,7 +65,9 @@ Rules worth knowing:
 - Every change raises the settings version by one. A command that changes nothing says so and leaves the version alone.
 - Changing a confirmed value withdraws that group's confirmation.
 - New settings start closed: delivery disabled, no payment methods, no workflows, nothing confirmed, environment `development`.
-- A workflow can be enabled only once this version of the server implements it. So far that is `menu`.
+- A workflow can be enabled only once this version of the server implements it. So far those are `menu` and `orders`. Orders need the menu enabled too, because the order editor reads it.
+- Orders created under development settings get references that start with `DEV-`; under live settings they start with `ORD-`.
+- Live settings take no orders until all five groups are confirmed, and sell only confirmed foods and variants.
 - A staff edit that changes a confirmed food's name, or a confirmed variant's label, unit, package contents or price, makes it provisional again.
 - `operations close` is for one situation: the frontend reports a save it cannot resolve, its status check keeps answering "not found", and the draft is gone. Closing the key tells the frontend the save did not happen. If the original request arrives later it is refused.
 - With `--environment live`, work that depends on unconfirmed settings is refused, and the session cookie is always HTTPS-only whatever `.env` says.
@@ -132,7 +134,7 @@ app/api/deps.py       session, CSRF and Origin checks shared by every route
 app/api/v1/           contract routers under /api/v1, one module per area
 app/schemas/          request and response models
 app/services/         business rules: credentials, sessions, accounts, business settings,
-                      versions, operation keys, menu, audit
+                      versions, operation keys, menu, audit, business time, orders
 app/persistence/      database connection, models and migrations
 tests/                behavioral tests
 docs/                 verification record for each phase

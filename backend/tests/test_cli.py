@@ -9,6 +9,7 @@ from app.config import Settings
 from app.main import create_app
 from app.persistence.database import Database
 from app.persistence.models import StaffUser
+from app.services import business_settings
 from tests.support import API, ORIGIN, Cli, FakeClock, error_of, sign_in, sqlite_url
 
 FIRST = "first operator token"
@@ -160,7 +161,9 @@ def test_local_setup_makes_a_new_machine_ready_in_one_command(
     assert settings["payment_methods"] == ["cash", "bank_transfer", "other"]
     # Provisional values stay unconfirmed, and only workflows this server has are switched on.
     assert not any(value for value in settings["confirmation"].values())
-    assert [name for name, enabled in settings["capabilities"].items() if enabled] == ["menu"]
+    enabled = {name for name, enabled in settings["capabilities"].items() if enabled}
+    assert enabled == business_settings.RELEASED
+    assert "payments" not in enabled
     assert [food["name"] for food in foods] == [
         "Beef Caldereta",
         "Fresh Lumpia",

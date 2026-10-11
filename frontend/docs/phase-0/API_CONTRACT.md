@@ -220,6 +220,18 @@ Pending confirmation is included in Phase 3 through `POST /orders/{id}/transitio
 
 Summary: `{id, reference, version, customer_name, customer_phone, fulfillment_at, fulfillment_local_date, fulfillment_local_time, fulfillment_timezone, fulfillment_method, status, payment_status, currency, minor_digits, total_minor, balance_due_minor, customer_credit_minor}`. Dashboard uses the same summaries; `upcoming` excludes today's rows and Cancelled/Completed orders. `today` excludes Cancelled but includes Completed orders for daily review. Filtering/sorting is backend business-time behavior.
 
+Backend refinement (2026-10-11), from implementing this section in backend Phase B3. None of it changes a request or response shape.
+
+- Every order route, the quote and the dashboard included, is 403 `action_forbidden` unless the `orders` capability is enabled. The order editor also reads the menu, so `menu` must be enabled with it.
+- "The identical draft" is compared after validation: surrounding spaces, an omitted empty note and key order do not make a draft different. A successful save spends its quote; using the quote again is `quote_stale`.
+- A quote is tied to the settings version and, for each new or growing line, to the versions of its variant and of its food. A stale `expected_version` is `version_conflict` at the quote as well as at the save; a current version with a quote made against an older one is `quote_stale`. An order that cannot be edited is 403 `action_forbidden` at both.
+- Field errors: a method the business does not offer, or delivery when it is disabled, at `/draft/fulfillment/method`; a skipped local time at `/draft/fulfillment/local_time` (`nonexistent_time`); an offset that does not fit the time, or a repeated time with none (`ambiguous_time`, with `details.utc_offsets`, earlier first), at `/draft/fulfillment/utc_offset`; a nonzero delivery charge for pickup at `/draft/delivery_charge_minor`; a repeated row identifier at its `client_line_id`; an unknown, unavailable, swapped, repeated or borrowed line at its `variant_id`; an amount beyond the safe bound at the line's `quantity`, at `/draft/items` or at `/draft/tax_minor` (`overflow`).
+- In a live system, unconfirmed settings are 409 `settings_unconfirmed` with `details.unconfirmed` naming the groups, and an unconfirmed food or variant on a new or growing line is 409 `menu_unconfirmed` with `details.food_id` and `details.variant_id`.
+- With a fixed delivery charge the settings' amount is used whatever the draft sends.
+- References are `DEV-0001`, `DEV-0002`, ... under development settings and `ORD-...` under live ones. Lines are returned in the order of the saved draft. A line removed by an edit no longer appears.
+- Until the backend serves Phase 4, `start_preparing`, `mark_ready`, `complete` and `cancel` are reported as blocked with reason code `not_released`, and `record_payment` and `refund` with `payments_disabled`; `ledger` is empty and the payment amounts are zero.
+- `sort=fulfillment_desc` reverses the ID tie-breaker as well. `status` must name at least one status. `date_from` after `date_to` is reported at `/query/date_to`. The dashboard accepts `date` only.
+
 ## Status and Payments (Phase 4)
 
 Status enum: `pending`, `confirmed`, `preparing`, `ready`, `completed`, `cancelled`. Normal transitions move one step forward. No arbitrary jumps/reversals. Cancellation is separate, permitted from Pending/Confirmed/Preparing/Ready, requires a reason, and keeps the original totals/ledger/consumption. Backend returns explanatory unavailable actions for all other transitions.

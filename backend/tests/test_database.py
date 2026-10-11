@@ -19,6 +19,11 @@ TABLES = {
     "foods",
     "variants",
     "audit_events",
+    "counters",
+    "orders",
+    "order_items",
+    "order_status_events",
+    "quotes",
 }
 
 

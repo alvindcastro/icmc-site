@@ -357,8 +357,7 @@ def test_a_workflow_that_is_not_released_cannot_be_switched_on(
     body = settings(staff)
     assert body["capabilities"] == dict.fromkeys(CAPABILITIES, False)
     assert body["version"] == 1
-    # Everything from orders onward is still to come.
-    assert len(unreleased) >= 7
+    assert "preparation_recording" in unreleased
 
 
 def test_a_released_workflow_is_switched_on_and_off_by_the_operator(
