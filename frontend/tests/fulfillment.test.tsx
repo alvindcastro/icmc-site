@@ -1,4 +1,4 @@
-import {act, render, screen, waitFor, within} from '@testing-library/react';
+import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {MemoryRouter} from 'react-router-dom';
 import {describe, expect, it, vi} from 'vitest';
@@ -46,7 +46,7 @@ describe('fulfillment and financial workflow', () => {
     await user.click(screen.getByRole('button', {name: 'Confirm payment'})); await screen.findByText('Version 2');
     const ledger = screen.getByRole('region', {name: 'Payments and refunds'}); expect(within(ledger).getByText('Transfer ABC')).toBeVisible(); expect(screen.getByText('Partial')).toBeVisible();
     await user.click(screen.getByRole('link', {name: 'Back to orders'})); expect(await screen.findByText('Due $35.00')).toBeVisible();
-    await user.click(screen.getByRole('link', {name: 'Dashboard'})); await user.clear(await screen.findByLabelText('Dashboard date')); await user.type(screen.getByLabelText('Dashboard date'), '2026-10-10');
+    await user.click(screen.getByRole('link', {name: 'Dashboard'})); fireEvent.change(await screen.findByLabelText('Dashboard date'), {target: {value: '2026-10-10'}});
     expect(await screen.findByText('Due $35.00')).toBeVisible();
   });
   it('cancels with a required reason while retaining payments, then confirms a full refund as a separate entry', async () => {

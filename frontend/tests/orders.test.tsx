@@ -1,4 +1,4 @@
-import {act, render, screen, waitFor, within} from '@testing-library/react';
+import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {MemoryRouter, useLocation} from 'react-router-dom';
 import {describe, expect, it, vi} from 'vitest';
@@ -149,7 +149,8 @@ describe('reservation workflow', () => {
     await user.type(screen.getByLabelText('Search orders'), 'missing');
     expect(await screen.findByText('No orders match these filters.')).toBeVisible();
     await user.click(screen.getByRole('link', {name: 'Dashboard'}));
-    await user.clear(await screen.findByLabelText('Dashboard date')); await user.type(screen.getByLabelText('Dashboard date'), '2026-10-10');
+    // One change event, as a browser's date field sends. Clearing first would fall back to today's business date.
+    fireEvent.change(await screen.findByLabelText('Dashboard date'), {target: {value: '2026-10-10'}});
     expect(await screen.findByRole('link', {name: order.reference})).toBeVisible();
     expect(screen.getByRole('heading', {name: "Today's orders"})).toBeVisible();
   });

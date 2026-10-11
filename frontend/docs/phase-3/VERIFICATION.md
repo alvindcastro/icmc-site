@@ -62,6 +62,12 @@ A code review of the delivered Phase 1-5 frontend found three reservation defect
 
 Only the operation UUID is kept in browser storage, as before; the retained request lives in protected memory and is cleared by reload or the end of the session. Combined results after all review fixes are recorded in the [plan](../../FRONTEND_IMPLEMENTATION_PLAN.md#post-delivery-review-fixes). Committed on 2026-10-10 in the repository's initial commit.
 
+## Date-Dependent Tests (2026-10-11)
+
+Two unit tests passed only while the business date was 2026-10-10, the date of their sample order, and failed in CI the day after: "filters list state, returns from details, and groups dashboard by the selected business date" here and "validates, reviews and records a deposit" in the Phase 4 suite. Both cleared the Dashboard date field and then typed a date. Clearing that field is defined to fall back to today's business date, so the field was never empty and the typed date was not accepted; on 2026-10-10 the fallback happened to be the date they wanted.
+
+The tests now set the date with one change event, as a browser's date field does and as the planning tests already did. No application code changed. Observed red: both failed on 2026-10-11, in CI and locally. Green: 382 unit tests in 33 files and 73 Chromium checks pass on 2026-10-11. No other test in either suite failed with the date change; the suite has not been run under any other simulated date.
+
 ## Live Handoff
 
 - [ ] Agree on order/quote/confirmation/operation refinements and confirm business currency/timezone, fulfillment/charge/tax policies, menu transcription, and staff provisioning.
