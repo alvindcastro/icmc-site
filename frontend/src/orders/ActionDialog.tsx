@@ -40,6 +40,8 @@ export function ActionDialog({client, settings, order, action, onClose, onSaved}
   const active = useRef(true); const saving = useRef(false); const attempt = useRef<Attempt | null>(null);
   const controller = useRef(new AbortController()); const form = useRef<HTMLFormElement>(null); const content = useRef<HTMLDivElement>(null);
   const dirty = JSON.stringify(entry) !== JSON.stringify(initial.current) || attested || stock;
+  // Readiness is attested by staff only while preparation is not recorded; recorded orders rely on prepared quantities.
+  const fulfilling = action === 'ready' || action === 'completed', attests = fulfilling && base.preparation_tracking === 'manual';
   const permission = base.permitted_actions[actionPermission[action]];
   const frozen = busy || uncertain || Boolean(conflict) || needsReload || !permission.allowed;
   const original = base.ledger.find(item => item.type === 'payment' && item.id === entry.payment);
@@ -124,7 +126,7 @@ export function ActionDialog({client, settings, order, action, onClose, onSaved}
     finally {saving.current = false; if (active.current) setBusy(false);}
   }
   function confirm() {
-    if (frozen || saving.current || ((action === 'ready' || action === 'completed') && !attested)) return;
+    if (frozen || saving.current || (attests && !attested)) return;
     const built = build(); setFields(built.errors);
     if (Object.keys(built.errors).length || (financial && (!review || !reviewBody))) return;
     void send({id: crypto.randomUUID(), path: `/orders/${encodeURIComponent(base.id)}/${financial ? action === 'payment' ? 'payments' : 'refunds' : action === 'cancel' ? 'cancel' : 'transitions'}`, body: financial ? reviewBody! : built.body});
@@ -148,7 +150,7 @@ export function ActionDialog({client, settings, order, action, onClose, onSaved}
     const path = `/${key}`; return <div className="field"><label htmlFor={`transaction-${key}`}>{name}</label><textarea id={`transaction-${key}`} maxLength={maximum} value={entry[key]} disabled={frozen} onChange={event => change({[key]: event.target.value})} aria-invalid={Boolean(fields[path])} aria-describedby={fields[path] ? `transaction-${key}-error` : undefined} />{fields[path] && <p id={`transaction-${key}-error`} className="field-error">{fields[path]}</p>}</div>;
   }
   return <Dialog.Root open onOpenChange={open => {if (!open) close();}}><Dialog.Portal><Dialog.Overlay className="dialog-overlay" /><Dialog.Content ref={content} className="editor-dialog order-editor transaction-dialog" aria-describedby={undefined}
-    onOpenAutoFocus={event => {event.preventDefault(); if (financial) document.getElementById('transaction-amount')?.focus(); else if (action === 'cancel') document.getElementById('transaction-reason')?.focus(); else if (action === 'preparing') document.getElementById('transaction-confirm')?.focus(); else form.current?.querySelector<HTMLElement>('input')?.focus();}}
+    onOpenAutoFocus={event => {event.preventDefault(); if (financial) document.getElementById('transaction-amount')?.focus(); else if (action === 'cancel') document.getElementById('transaction-reason')?.focus(); else if (action === 'preparing') document.getElementById('transaction-confirm')?.focus(); else (form.current?.querySelector<HTMLElement>('input') ?? document.getElementById('transaction-confirm'))?.focus();}}
     onCloseAutoFocus={event => {event.preventDefault(); if (opener.current?.isConnected) opener.current.focus(); else document.getElementById('main-content')?.focus();}}
     onEscapeKeyDown={event => {event.preventDefault(); close();}} onPointerDownOutside={event => event.preventDefault()}>
     <div className="editor-heading"><div><Dialog.Title>{discard ? 'Discard changes?' : titles[action]}</Dialog.Title><small>{base.reference} / Version {base.version}</small></div><IconButton label="Close transaction" disabled={busy} onClick={close}><X size={20} /></IconButton></div>
@@ -167,10 +169,11 @@ export function ActionDialog({client, settings, order, action, onClose, onSaved}
         <div className="editor-actions"><button className="button primary" type="submit" disabled={frozen}><Check size={17} />Review {action}</button></div>
       </form> : <><OrderReview value={base} customer={base.customer} notes={base.notes} />
         <form ref={form} onSubmit={event => {event.preventDefault(); confirm();}} noValidate className="entry-section">
-          {action === 'cancel' && <>{textArea('Cancellation reason', 'reason', 1000)}<p>Payment history is retained. Any funds held become customer credit until separately refunded.</p>{base.cancellation_requires_stock_acknowledgment && <><label className="checkbox-field"><input type="checkbox" checked={stock} disabled={frozen} onChange={event => {setStock(event.target.checked); setFields({});}} aria-invalid={Boolean(fields['/acknowledge_consumed_stock'])} aria-describedby={fields['/acknowledge_consumed_stock'] ? 'transaction-stock-error' : undefined} />Consumed ingredients will not be restored; stock corrections are separate.</label>{fields['/acknowledge_consumed_stock'] && <p id="transaction-stock-error" className="field-error">{fields['/acknowledge_consumed_stock']}</p>}</>}</>}
-          {(action === 'ready' || action === 'completed') && <label className="checkbox-field"><input type="checkbox" checked={attested} disabled={frozen} onChange={event => setAttested(event.target.checked)} />{action === 'ready' ? 'Food is ready for pickup or delivery' : 'Order has been fulfilled'}</label>}
+          {action === 'cancel' && <>{textArea('Cancellation reason', 'reason', 1000)}<p>Payment history is retained. Any funds held become customer credit until separately refunded.</p>{base.items.some(item => (item.prepared_quantity ?? 0) > 0) && <ul className="prepared-review">{base.items.filter(item => (item.prepared_quantity ?? 0) > 0).map(item => <li key={item.id}>{`${item.prepared_quantity} of ${item.quantity} ${item.variant_label} of ${item.food_name} already prepared`}</li>)}</ul>}{base.cancellation_requires_stock_acknowledgment && <><label className="checkbox-field"><input type="checkbox" checked={stock} disabled={frozen} onChange={event => {setStock(event.target.checked); setFields({});}} aria-invalid={Boolean(fields['/acknowledge_consumed_stock'])} aria-describedby={fields['/acknowledge_consumed_stock'] ? 'transaction-stock-error' : undefined} />Consumed ingredients will not be restored; stock corrections are separate.</label>{fields['/acknowledge_consumed_stock'] && <p id="transaction-stock-error" className="field-error">{fields['/acknowledge_consumed_stock']}</p>}</>}</>}
+          {fulfilling && !attests && <p>All ordered quantities are recorded as prepared.</p>}
+          {attests && <label className="checkbox-field"><input type="checkbox" checked={attested} disabled={frozen} onChange={event => setAttested(event.target.checked)} />{action === 'ready' ? 'Food is ready for pickup or delivery' : 'Order has been fulfilled'}</label>}
         </form></>}
-      {(!financial || review) && <div className="editor-actions">{financial && <button className="button secondary" disabled={frozen} onClick={() => {setReview(false); setReviewBody(null);}}>Back to edit</button>}<button id="transaction-confirm" className={`button ${action === 'cancel' ? 'danger' : 'primary'}`} disabled={frozen || ((action === 'ready' || action === 'completed') && !attested)} onClick={confirm}><Check size={17} />{busy ? 'Saving...' : confirms[action]}</button></div>}
+      {(!financial || review) && <div className="editor-actions">{financial && <button className="button secondary" disabled={frozen} onClick={() => {setReview(false); setReviewBody(null);}}>Back to edit</button>}<button id="transaction-confirm" className={`button ${action === 'cancel' ? 'danger' : 'primary'}`} disabled={frozen || (attests && !attested)} onClick={confirm}><Check size={17} />{busy ? 'Saving...' : confirms[action]}</button></div>}
     </>}
     <NavigationGuard dirty={dirty || uncertain} busy={busy} onLeave={leave} />
   </Dialog.Content></Dialog.Portal></Dialog.Root>;

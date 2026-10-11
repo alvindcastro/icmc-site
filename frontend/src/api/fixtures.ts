@@ -3,20 +3,24 @@ import { createMenuFixtures } from './menu-fixtures';
 import { createOrderFixtures } from './order-fixtures';
 import { createInventoryFixtures } from './inventory-fixtures';
 import { createRecipeFixtures } from './recipe-fixtures';
+import { createPlanningFixtures } from './planning-fixtures';
+import { createPreparationFixtures } from './preparation-fixtures';
 import { seedSampleRecipes } from './sample-recipes';
 import type { FixtureOperations } from './fixture-protocol';
 
-const settings: BusinessSettings = {
+const defaults: BusinessSettings = {
   version: 1, environment: 'development',
   confirmation: { currency: false, timezone: false, fulfillment: false, delivery: false, tax: false, confirmed_at: null },
   currency: 'USD', minor_digits: 2, timezone: 'America/Los_Angeles',
   fulfillment_methods: ['pickup', 'delivery'], pickup_location: null,
   delivery_policy: { mode: 'manual_amount', fixed_charge_minor: null },
   tax_policy: { mode: 'manual_amount', inclusive: false }, payment_methods: ['cash', 'bank_transfer', 'other'],
-  capabilities: { orders: true, menu: true, payments: true, inventory: true, purchases: true, recipes: true, planning: false, preparation_recording: false },
+  capabilities: { orders: true, menu: true, payments: true, inventory: true, purchases: true, recipes: true, planning: true, preparation_recording: false },
 };
 
-export function createFixtureTransport(options: { latency?: number; samples?: boolean } = {}): { fetch: FetchTransport; expire: () => void } {
+export function createFixtureTransport(options: { latency?: number; samples?: boolean; preparation?: boolean } = {}): { fetch: FetchTransport; expire: () => void } {
+  // Preparation recording changes how orders become ready, so it is opt-in per transport like a backend capability.
+  const settings: BusinessSettings = {...defaults, capabilities: {...defaults.capabilities, preparation_recording: Boolean(options.preparation)}};
   let session: StaffSession | null = null;
   let expired = false;
   let csrfToken = crypto.randomUUID();
@@ -27,6 +31,8 @@ export function createFixtureTransport(options: { latency?: number; samples?: bo
   const orders = createOrderFixtures({menu, settings, usedVariants, operations});
   const inventory = createInventoryFixtures(settings, operations);
   const recipes = createRecipeFixtures({menu, inventory, settings, recipeIds});
+  const planning = createPlanningFixtures({orders, menu, recipes, inventory, settings});
+  const preparations = createPreparationFixtures({orders, inventory, recipes, settings, operations});
   // Placeholder ingredients, one receipt and recipes are opt-in; the default fixture starts empty.
   const seeded = options.samples ? seedSampleRecipes({menu, inventory, recipes}) : Promise.resolve();
   const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
@@ -80,7 +86,7 @@ export function createFixtureTransport(options: { latency?: number; samples?: bo
         session.idle_expires_at = new Date(Math.min(Date.now() + 1800000, Date.parse(session.absolute_expires_at))).toISOString();
         return json(settings);
       }
-      const response = await inventory(url, init) ?? await recipes(url, init) ?? await orders(url, init) ?? await menu(url, init);
+      const response = await inventory(url, init) ?? await recipes(url, init) ?? await planning(url, init) ?? await preparations(url, init) ?? await orders(url, init) ?? await menu(url, init);
       if (response) {
         session.idle_expires_at = new Date(Math.min(Date.now() + 1800000, Date.parse(session.absolute_expires_at))).toISOString();
         return response;

@@ -161,6 +161,17 @@ select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(-
 .variant-recipe { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
 .variant-recipe a { display: inline-flex; align-items: center; min-height: 44px; }
 .estimate-note { font-size: .8125rem; color: var(--muted); margin-top: 16px; }
+.heading-actions, .record-corrections { display: flex; flex-wrap: wrap; gap: 10px; }
+.prepared-review { margin: 12px 0; padding-left: 20px; }
+.preparation-entry > .entry-grid { margin: 18px 0 30px; }
+.preparation-entry .ingredient-picker { margin-top: 14px; }
+.transaction-review h2:focus, .menu-notice:focus { outline: none; }
+.preparation-lines .input-wrap { max-width: 120px; }
+.planning-orders { display: grid; gap: 6px; min-width: 0; }
+.summary-links { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.summary-links a { display: inline-flex; align-items: center; min-height: 44px; }
+.menu-count + .page-section, .menu-count + .menu-notice { margin-top: 20px; }
+.planning-orders a { display: inline-flex; align-items: center; min-height: 44px; }
 .money { font-variant-numeric: tabular-nums; }
 .add-variant { margin-top: 14px; }
 .no-variants { font-size: .875rem; color: var(--muted); padding: 6px 0; }

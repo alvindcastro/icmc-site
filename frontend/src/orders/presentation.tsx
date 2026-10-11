@@ -9,7 +9,7 @@ export function Amounts({value}: {value: Totals}) {
 export function SnapshotItems({items, money}: {items: SnapshotLine[]; money: {currency: string; minor_digits: number}}) {
   return <table className="snapshot-table"><thead><tr><th>Item</th><th>Quantity</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>{items.map((item, index) => <tr key={index}>
     <th scope="row">{item.food_name}<small>{item.variant_label}</small>{item.preparation_notes && <p className="item-note">{item.preparation_notes}</p>}</th>
-    <td data-label="Quantity">{item.quantity} {item.selling_unit}{item.quantity === 1 ? '' : 's'}{item.package_contents && ` / ${item.package_contents.quantity} pieces`}</td>
+    <td data-label="Quantity">{item.quantity} {item.selling_unit}{item.quantity === 1 ? '' : 's'}{item.package_contents && ` / ${item.package_contents.quantity} pieces`}{item.prepared_quantity !== null && <small>{`${item.prepared_quantity} prepared / ${item.remaining_quantity} remaining`}</small>}</td>
     <td data-label="Unit price">{formatMoney(item.unit_price_minor, money)}<small>{sellingLabel(item.selling_unit, item.package_contents)}</small></td><td data-label="Line total" className="money">{formatMoney(item.line_total_minor, money)}</td>
   </tr>)}</tbody></table>;
 }

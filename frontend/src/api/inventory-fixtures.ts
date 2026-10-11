@@ -26,7 +26,18 @@ export function createInventoryFixtures(settings: BusinessSettings, operations: 
     const used = movements.some(row => row.ingredient_id === item.id);
     item.permitted_actions.opening = used ? {allowed: false, reason_code: 'opening_used', reason: 'Opening stock is only available before the first movement.'} : {...allow};
   };
-  return async (url: URL, init?: RequestInit): Promise<Response | null> => {
+  // Applied by the preparation fixture after validation: one movement per ingredient, linked to its preparation.
+  function move(rows: {ingredient_id: string; delta_base_quantity: string; type: 'consumption' | 'correction'; reason: string; preparation_id: string; corrects_movement_id: string | null; operation_id: string}[]) {
+    const now = new Date().toISOString(), recorded: Movement[] = [], changed: Ingredient[] = [];
+    for (const row of rows) {
+      const item = ingredients.find(value => value.id === row.ingredient_id)!, before = new D(item.stock_on_hand), after = before.plus(row.delta_base_quantity);
+      const movement: Movement = {id: `fixture_movement_${crypto.randomUUID()}`, ingredient_id: item.id, delta_base_quantity: new D(row.delta_base_quantity).toFixed(), before_quantity: before.toFixed(), after_quantity: after.toFixed(),
+        type: row.type, reason: row.reason, purchase_id: null, preparation_id: row.preparation_id, corrects_movement_id: row.corrects_movement_id, operation_id: row.operation_id, recorded_at: now, recorded_by: 'Admin'};
+      movements.push(movement); item.stock_on_hand = after.toFixed(); item.version++; refresh(item); recorded.push(movement); changed.push(item);
+    }
+    return JSON.parse(JSON.stringify({movements: recorded, ingredients: changed})) as {movements: Movement[]; ingredients: Ingredient[]};
+  }
+  const handler = async (url: URL, init?: RequestInit): Promise<Response | null> => {
     const path = url.pathname.replace('/api/v1', ''), method = init?.method ?? 'GET';
     if (!/^\/(ingredients|purchases)(\/|$)/.test(path)) return null;
     const err = (code: string, message: string, field_errors: FieldError[] = [], details = {}) => ({error: {code, message, field_errors, details, request_id: 'inventory-development-fixture'}});
@@ -99,7 +110,9 @@ export function createInventoryFixtures(settings: BusinessSettings, operations: 
       if (!Number.isSafeInteger(body.expected_version) || body.expected_version < 1) field('/expected_version', 'A version is required.');
       if (!quantity(body.delta_base_quantity, current!.base_unit, true) || new D(body.delta_base_quantity || 0).isZero()) field('/delta_base_quantity', 'Enter a nonzero quantity in the base unit.');
       if (typeof body.reason !== 'string' || !body.reason.trim() || body.reason.length > 2000) field('/reason', 'Enter a reason (up to 2000 characters).');
-      if (body.preparation_id != null) field('/preparation_id', 'Preparation recording is not enabled.');
+      // A movement can only be linked to a preparation that consumed this ingredient.
+      if (body.preparation_id != null && !(settings.capabilities.preparation_recording && movements.some(item => item.ingredient_id === current!.id && item.type === 'consumption' && item.preparation_id === body.preparation_id)))
+        field('/preparation_id', settings.capabilities.preparation_recording ? 'Choose a preparation that used this ingredient.' : 'Preparation recording is not enabled.');
       if (body.corrects_movement_id != null && !movements.some(item => item.ingredient_id === current!.id && item.id === body.corrects_movement_id)) field('/corrects_movement_id', 'Choose a movement for this ingredient.');
       if (fields.length) return finish(fail(422, 'validation_failed', 'Check the highlighted fields.', fields));
       const delta = new D(body.delta_base_quantity), after = new D(current!.stock_on_hand).plus(delta);
@@ -115,7 +128,7 @@ export function createInventoryFixtures(settings: BusinessSettings, operations: 
       if (!preview || preview.input !== canonical(input) || Date.parse(preview.result.expires_at) <= Date.now() || !('ingredient_id' in preview.result) || preview.result.ingredient_id !== current!.id) return stale();
       const movement: Movement = {id: `fixture_movement_${crypto.randomUUID()}`, ingredient_id: current!.id, type: body.type, reason: body.reason.trim(),
         delta_base_quantity: delta.toFixed(), before_quantity: current!.stock_on_hand, after_quantity: after.toFixed(), purchase_id: null,
-        preparation_id: null, corrects_movement_id: body.corrects_movement_id ?? null, operation_id: key!, recorded_at: new Date().toISOString(), recorded_by: 'Admin'};
+        preparation_id: body.preparation_id ?? null, corrects_movement_id: body.corrects_movement_id ?? null, operation_id: key!, recorded_at: new Date().toISOString(), recorded_by: 'Admin'};
       movements.push(movement); current!.stock_on_hand = after.toFixed(); current!.version++; refresh(current!);
       return finish(json({movement, ingredient: current}, 201), 'ingredient', current!.id);
     }
@@ -178,4 +191,8 @@ export function createInventoryFixtures(settings: BusinessSettings, operations: 
     }
     return fail(404, 'not_found', 'Inventory action unavailable.');
   };
+  const consume = (rows: {ingredient_id: string; base_quantity: string; preparation_id: string; operation_id: string}[]) => move(rows.map(row => ({ingredient_id: row.ingredient_id, delta_base_quantity: new D(row.base_quantity).negated().toFixed(),
+    type: 'consumption' as const, reason: 'Preparation recorded', preparation_id: row.preparation_id, corrects_movement_id: null, operation_id: row.operation_id})));
+  const correct = (rows: {ingredient_id: string; delta_base_quantity: string; reason: string; preparation_id: string; corrects_movement_id: string; operation_id: string}[]) => move(rows.map(row => ({...row, type: 'correction' as const})));
+  return Object.assign(handler, {consume, correct});
 }

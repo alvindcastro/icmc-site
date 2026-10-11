@@ -27,7 +27,8 @@ describe('explicit development fixtures', () => {
       method: 'POST', body: { username: 'admin', token: 'local-admin-token' },
     });
     client.setCsrfToken(session.csrf_token);
-    await expect(client.request('/planning')).rejects.toMatchObject({ status: 404 });
+    await expect(client.request('/reports/daily')).rejects.toMatchObject({ status: 404, code: 'not_found' });
+    await expect(client.request('/preparations/preview', { method: 'POST', body: {} })).rejects.toMatchObject({ status: 403 });
     fixture.expire();
     await expect(client.request('/settings')).rejects.toMatchObject({ code: 'session_expired' });
   });

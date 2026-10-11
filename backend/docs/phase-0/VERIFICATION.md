@@ -35,7 +35,7 @@ Tooling correction, not counted as red: the first run warned that the test clien
 - [x] Frontend development proxy confirmed: with the frontend running in live mode, `GET /api/v1/auth/session` on the frontend's port was answered by the backend (404 from uvicorn, visible in the backend's access log), while `/healthz` on the frontend's port was not forwarded.
 - [x] The frontend opened against the scaffold shows "The request could not be completed." with Retry session check, sign-in disabled and no page errors, which is the expected state until Phase B1.
 - [x] Checks ran in a Linux copy of the workspace with uv and Python 3.12 kept inside a temporary directory.
-- [ ] The CI workflow has not run yet; it runs on the next push. Its YAML parses and it uses the same commands verified above.
+- [x] The CI workflow's first run, on the commit that added it (`22894dd`), passed in both the backend and frontend jobs.
 
 Resolved versions in the lockfile include FastAPI 0.143.0, Starlette 1.7.0, Pydantic 2.14.0, uvicorn 0.54.0, pytest 9.1.1, ruff 0.17.0 and mypy 2.4.0.
 

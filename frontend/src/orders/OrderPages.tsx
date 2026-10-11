@@ -13,6 +13,7 @@ import {Amounts, SnapshotItems, Status} from './presentation';
 import {OrderActions} from './OrderActions';
 import {Ledger} from './Ledger';
 import {LowStock} from '../inventory/InventoryPages';
+import {PreparationSummary} from '../planning/PlanningPage';
 
 function useRecord<T>(path: string, validate: (value: unknown) => T) {
   const {client, revision} = useOrders();
@@ -91,14 +92,14 @@ export function PrintOrder() {
   </>;
 }
 export function DashboardPage() {
-  const {client, settings} = useOrders();
+  const {client, settings, revision} = useOrders();
   const [params, setParams] = useSearchParams(); const location = useLocation(); const date = params.get('date');
   const state = useRecord<Dashboard>(`/dashboard${date ? `?date=${encodeURIComponent(date)}` : ''}`, checkedDashboard);
   return <><div className="page-heading"><h1>Dashboard</h1><NewOrder /></div><div className="menu-filters"><Field id="dashboard-date" label="Dashboard date" type="date" value={date ?? state.value?.business_date ?? ''} onChange={e => setParams(e.target.value ? {date: e.target.value} : {}, {replace: true})} />{state.value && <small>{state.value.timezone}</small>}</div>
     {state.error ? <Failure message={state.error} retry={state.retry} /> : !state.value ? <Loading>Loading dashboard...</Loading> : <>{(['today', 'upcoming'] as const).map(collection => <section className="page-section" key={collection}><div className="section-heading"><h2>{collection === 'today' ? "Today's orders" : 'Upcoming orders'}</h2><small>{collection === 'today' ? formatCalendarDate(state.value!.business_date) : `After ${formatCalendarDate(state.value!.business_date)}`}</small></div>
       {state.value![collection].items.length ? <SummaryTable rows={state.value![collection].items} returnTo={location.pathname + location.search} /> : <p className="empty-state">{collection === 'today' ? 'No orders for this date.' : 'No upcoming orders.'}</p>}
       {state.value![collection].has_next && <Link to={collectionLink(state.value!.business_date, collection)}>{collection === 'today' ? 'View all orders for this date' : 'View all upcoming orders'}</Link>}
-    </section>)}</>}
+    </section>)}<PreparationSummary client={client} settings={settings} revision={revision} date={state.value.business_date} /></>}
     <LowStock client={client} settings={settings} />
   </>;
 }

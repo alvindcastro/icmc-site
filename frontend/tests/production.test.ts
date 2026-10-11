@@ -23,6 +23,10 @@ it('excludes development fixture accounts and transport from production JavaScri
     expect(code.includes('fixture_movement_')).toBe(false);
     expect(code.includes('fixture_inventory_preview_')).toBe(false);
     expect(code.includes('fixture_recipe_')).toBe(false);
+    expect(code.includes('fixture_planning_')).toBe(false);
+    expect(code.includes('fixture_preparation_')).toBe(false);
+    expect(code.includes('fixture_correction_')).toBe(false);
+    expect(code.includes('preparation-development-fixture')).toBe(false);
     expect(code.includes('Lorem ipsum supplier')).toBe(false);
     expect(code.includes('recipe-development-fixture')).toBe(false);
     expect(code.includes('ROUND_HALF_UP')).toBe(false);

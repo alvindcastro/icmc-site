@@ -11,6 +11,11 @@ import {DashboardPage, OrderDetails, OrdersPage, PrintOrder} from './orders/Orde
 import {InventoryArea} from './inventory/InventoryArea';
 import {IngredientsPage, IngredientDetails, PurchasesPage, PurchaseDetails} from './inventory/InventoryPages';
 import {RecipePage} from './recipes/RecipePage';
+import {PlanningPage} from './planning/PlanningPage';
+import {ShoppingListPage} from './planning/ShoppingListPage';
+import {PreparationPage} from './preparation/PreparationPage';
+import {PreparationDetails} from './preparation/PreparationDetails';
+import {PreparationCorrectionPage} from './preparation/PreparationCorrectionPage';
 
 function ProtectedShell({ mode }: { mode: 'live' | 'fixtures' }) {
   const { status } = useSession();
@@ -34,12 +39,17 @@ export function App({ client, mode = 'live' }: { client: ApiClient; mode?: 'live
         <Route path="/ingredients/:id" element={<IngredientDetails />} />
         <Route path="/purchases" element={<PurchasesPage />} />
         <Route path="/purchases/:id" element={<PurchaseDetails />} />
+        <Route path="/preparations/:id" element={<PreparationDetails />} />
+        <Route path="/preparations/:id/correct" element={<PreparationCorrectionPage />} />
       </Route>
       <Route element={<OrderArea client={client} />}>
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/orders/:id" element={<OrderDetails />} />
         <Route path="/orders/:id/print" element={<PrintOrder />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/planning" element={<PlanningPage />} />
+        <Route path="/planning/shopping-list" element={<ShoppingListPage />} />
+        <Route path="/planning/prepare" element={<PreparationPage />} />
       </Route>
       <Route path="*" element={<><h1>Page unavailable</h1><Link to="/">Return to workspace</Link></>} />
     </Route>

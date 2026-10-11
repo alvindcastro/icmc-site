@@ -4,8 +4,8 @@ import type {Food, MenuVariant, PageResult} from '../src/api/types';
 
 export const yieldOf = (variant: Pick<MenuVariant, 'selling_unit' | 'package_contents'>) => ({quantity: 1, selling_unit: variant.selling_unit, package_contents: variant.package_contents});
 // Medium Beef Caldereta (8000 minor units) with a Flour ingredient; by default 2 kg bought for 2400 on 2026-10-07.
-export async function recipeSeed(options: {purchase?: boolean; recipe?: boolean} = {}) {
-  const fixture = createFixtureTransport({latency: 0});
+export async function recipeSeed(options: {purchase?: boolean; recipe?: boolean; preparation?: boolean} = {}) {
+  const fixture = createFixtureTransport({latency: 0, preparation: options.preparation});
   const api = createApiClient({baseUrl: '/api/v1', transport: fixture.fetch});
   const signIn = async () => {const session = await api.request<{csrf_token: string}>('/auth/sign-in', {method: 'POST', body: {username: 'admin', token: 'local-admin-token'}}); api.setCsrfToken(session.csrf_token);};
   await signIn();

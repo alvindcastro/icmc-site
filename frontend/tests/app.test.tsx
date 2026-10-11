@@ -82,7 +82,8 @@ describe('foundation and staff session', () => {
     expect(screen.getByRole('link', {name: 'Ingredients'})).toBeVisible();
     expect(screen.getByRole('link', {name: 'Purchases'})).toBeVisible();
     expect(screen.getByRole('link', { name: 'Menu & Recipes' })).toBeVisible();
-    expect(screen.queryByRole('link', { name: /planning|preparation|shopping/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Planning' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: /preparation|shopping/i })).not.toBeInTheDocument();
   });
 
   it('clears protected data on expiry and never repeats an expired mutation after signing in', async () => {

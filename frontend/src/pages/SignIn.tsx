@@ -8,7 +8,7 @@ import { Feedback, Field, IconButton, Loading } from '../components/ui';
 function safeReturn(value: string | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\r\n]/.test(value)) return '/';
   const pathname = new URL(value, 'http://local').pathname;
-  return ['/', '/account', '/menu', '/orders', '/dashboard', '/ingredients', '/purchases'].includes(pathname) || /^\/orders\/[^/]+(?:\/print)?$/.test(pathname) || /^\/(ingredients|purchases)\/[^/]+$/.test(pathname) || /^\/menu\/[^/]+\/variants\/[^/]+\/recipe$/.test(pathname) ? value : '/';
+  return ['/', '/account', '/menu', '/orders', '/dashboard', '/planning', '/planning/shopping-list', '/planning/prepare', '/ingredients', '/purchases'].includes(pathname) || /^\/orders\/[^/]+(?:\/print)?$/.test(pathname) || /^\/(ingredients|purchases|preparations)\/[^/]+$/.test(pathname) || /^\/preparations\/[^/]+\/correct$/.test(pathname) || /^\/menu\/[^/]+\/variants\/[^/]+\/recipe$/.test(pathname) ? value : '/';
 }
 
 export function SignIn({ mode }: { mode: 'live' | 'fixtures' }) {

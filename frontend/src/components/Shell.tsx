@@ -1,8 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { Home, UserRound, LogOut, Menu, X, Utensils, ShieldCheck, FlaskConical, ClipboardList, CalendarDays, LayoutDashboard, Package, ReceiptText } from 'lucide-react';
+import { Home, UserRound, LogOut, Menu, X, Utensils, ShieldCheck, FlaskConical, ClipboardList, CalendarDays, LayoutDashboard, ListChecks, Package, ReceiptText } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useSession } from '../auth/session';
+import { planningEnabled } from '../planning/PlanningPage';
 import { recipesEnabled } from '../recipes/model';
 import { ErrorBoundary, Feedback, IconButton } from './ui';
 
@@ -12,6 +13,7 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
     <NavLink to="/" end onClick={onNavigate}><Home size={18} />Workspace</NavLink>
     {settings?.capabilities.menu && <NavLink to="/menu" onClick={onNavigate}><ClipboardList size={18} />{recipesEnabled(settings) ? 'Menu & Recipes' : 'Menu'}</NavLink>}
     {settings?.capabilities.orders && <><NavLink to="/dashboard" onClick={onNavigate}><LayoutDashboard size={18} />Dashboard</NavLink><NavLink to="/orders" onClick={onNavigate}><CalendarDays size={18} />Orders</NavLink></>}
+    {settings && planningEnabled(settings) && <NavLink to="/planning" onClick={onNavigate}><ListChecks size={18} />Planning</NavLink>}
     {settings?.capabilities.inventory && <NavLink to="/ingredients" onClick={onNavigate}><Package size={18} />Ingredients</NavLink>}
     {settings?.capabilities.inventory && settings.capabilities.purchases && <NavLink to="/purchases" onClick={onNavigate}><ReceiptText size={18} />Purchases</NavLink>}
     <NavLink to="/account" onClick={onNavigate}><UserRound size={18} />My account</NavLink>

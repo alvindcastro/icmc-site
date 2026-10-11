@@ -22,6 +22,11 @@ export function formatBusinessTime(instant: string, timezone: string): string {
     hour: 'numeric', minute: '2-digit',
   }).format(new Date(instant));
 }
+// The calendar date in the business timezone at the given instant.
+export function businessDate(timezone: string, at: number): string {
+  const parts = new Intl.DateTimeFormat('en-US', {timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date(at));
+  return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-');
+}
 export function formatCalendarDate(date: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Invalid business date.');
   const value = new Date(`${date}T00:00:00Z`);

@@ -40,7 +40,7 @@ Each backend phase is finished when the matching frontend live completion gate c
 | B4. Status and payments | Fulfillment steps, cancellation, payment and refund ledger | Phase 4 | A09, A10, A12 |
 | B5. Ingredients and purchases | Stock movements, normalized purchases, price history | Phase 5 | A02, A19 |
 | B6. Recipes and estimates | Per-variant recipes and ingredient cost estimates | Phase 6 | A02, A20 |
-| B7. Planning and preparation | Demand, shortages, preparation recording | Phase 7 (frontend not built yet) | A11-A14, A19, A20 |
+| B7. Planning and preparation | Demand, shortages, preparation recording | Phase 7 (frontend built against fixtures) | A11-A14, A19, A20 |
 | B8. Running locally, later release | Local running and conformance now; deployment, backup and restore, provisioning and walkthroughs deferred | Technical part of each gate now; real-use checks later | A16 with the frontend |
 
 ## Proposed Shape
@@ -95,7 +95,7 @@ Purpose: Agree what is being built and create a project that can be run, tested 
 - [ ] Resolve decisions D01-D13 above.
 - [x] Scaffold the package: application factory, one router per area, services holding the business rules, persistence, request and response schemas, and settings read from the environment. The factory, settings and the `/api/v1` mount point exist; each area's router, services, persistence and schemas are added by the phase that needs them.
 - [x] Add dependency lockfile, linting, type checking and pytest, runnable with one command each.
-- [x] Add a CI workflow that runs the backend checks on every push. Consider adding the frontend type check and unit tests to the same workflow; neither has CI today. Both jobs are in `.github/workflows/ci.yml`; its first run happens on the next push.
+- [x] Add a CI workflow that runs the backend checks on every push. Consider adding the frontend type check and unit tests to the same workflow; neither has CI today. Both jobs are in `.github/workflows/ci.yml`; its first run, on the commit that added it, passed.
 - [x] Add an unauthenticated health endpoint outside `/api/v1` for the proxy, exposing no data. It is `GET /healthz`.
 - [x] Write `backend/README.md`: setup, running in PyCharm, migrations, tests, environment variables, and how to run with the frontend. Migrations are described when the database arrives in Phase B1.
 - [x] Confirm the frontend's development proxy reaches the server: `npm run dev` in live mode forwards `/api` to `127.0.0.1:8000`.
@@ -269,16 +269,17 @@ Completion check: With the 2 kg for 2400 purchase, a 750 g recipe costs 900 mino
 
 ## Phase B7: Planning and Preparation
 
-Purpose: Say what to cook and what to buy, and record cooking exactly once. The frontend for this phase is not built; build both sides together. Contract: [planning and preparation](../frontend/docs/phase-0/API_CONTRACT.md#planning-and-preparation-phase-7) and the [preparation rules](../frontend/docs/phase-0/DECISIONS.md#preparation-eligibility-and-completion).
+Purpose: Say what to cook and what to buy, and record cooking exactly once. Since 2026-10-10 the frontend has planning, the dashboard summary, the shopping list, preparation recording and corrections, all against development fixtures, and it checks every response named here. The response shapes it expects are written into the contract as refinements for agreement; nothing in this phase exists on the backend yet. Contract: [planning and preparation](../frontend/docs/phase-0/API_CONTRACT.md#planning-and-preparation-phase-7) and the [preparation rules](../frontend/docs/phase-0/DECISIONS.md#preparation-eligibility-and-completion).
 
 - [ ] `GET /planning` for an inclusive date range of at most 366 days. Demand comes from the remaining quantities of Confirmed, Preparing and Ready orders; Pending, Cancelled and Completed contribute nothing.
 - [ ] Group food demand by variant and selling format snapshot, with the contributing orders and ordered, prepared and remaining quantities.
 - [ ] For each ingredient return physical stock, earlier remaining demand, selected-period demand, stock after earlier commitments (which may be negative), period shortage and cumulative shortage, using the register's formulas so no commitment is counted twice.
 - [ ] Mark the result incomplete when any contributing variant lacks a recipe, and name the affected orders and variants. Planning never moves stock.
 - [ ] `GET /planning/shopping-list` returns the same period and calculation with the cumulative shortage per ingredient.
-- [ ] `POST /preparations/preview` and `POST /preparations` (with an operation key): allocations cannot exceed remaining quantities, consumption is explicit actual usage, and stock is deducted in one transaction exactly once. Snapshot the recipe and cost basis used. Recording preparation never changes order status.
-- [ ] `GET /preparations/{id}`, plus correction preview and save, bounded so prepared quantities stay between zero and ordered and stock stays non-negative. Corrections are append-only and linked.
-- [ ] When `preparation_recording` is enabled: order responses carry prepared and remaining quantities, Ready and Completed require nothing remaining, prepared lines cannot be removed or reduced below what is prepared, and cancellation requires the consumed-stock acknowledgment.
+- [ ] `POST /preparations/preview` and `POST /preparations` (with an operation key): allocations cannot exceed remaining quantities, consumption is explicit actual usage, and stock is deducted in one transaction exactly once. Snapshot the recipe and cost basis used. Recording preparation never changes order status. Each planning order row carries `order_version` for the allocation to quote. An empty consumption list needs a note. Usage beyond stock is 409 `insufficient_stock` on the consumption row. The saved record keeps stock before and after per ingredient and the movement it created, and its operation has resource type `preparation`.
+- [ ] `GET /preparations/{id}`, plus correction preview and save, bounded so prepared quantities stay between zero and ordered and stock stays non-negative. Corrections are append-only and linked. A count cannot go below what its preparation recorded net of earlier corrections, and cannot be lowered while the order is Ready or Completed. `GET /preparations/{id}/corrections` lists them; the operation has resource type `preparation_correction`.
+- [ ] Accept `preparation_id` on waste and correction movements only when that preparation consumed the ingredient, and return it on the movement.
+- [ ] When `preparation_recording` is enabled: order responses carry `preparation_tracking: "recorded"` with prepared and remaining quantities, `record_preparation` is permitted while something remains, Ready and Completed require nothing remaining, prepared lines cannot be removed or reduced below what is prepared, and cancellation requires the consumed-stock acknowledgment once anything is prepared.
 - [ ] Write and rehearse the operator procedure for enabling recording on a running system: audited baseline prepared quantities that do not deduct stock again, and an agreed physical opening stock.
 
 Completion check: The checklist's acceptance walkthrough passes end to end, including partial preparation, a repeated preparation request deducting stock once, and cancellation that removes demand without returning stock.

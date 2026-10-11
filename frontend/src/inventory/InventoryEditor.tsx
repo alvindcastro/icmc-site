@@ -16,7 +16,8 @@ import {InventoryPagination, ReadState, useInventoryRecord} from './reads';
 import type {BaseUnit, Ingredient, InventoryResult, MovementInput, MovementPreview, PurchaseDraft, PurchasePreview, PurchaseUnit} from './types';
 
 export const inventoryOperationMarker = 'food-reservations:inventory-operation';
-export type EditorTarget = {kind: 'ingredient'; ingredient?: Ingredient} | {kind: 'movement'; ingredient: Ingredient; action: MovementInput['type']} | {kind: 'purchase'};
+// A movement opened from a preparation record stays linked to it; a correction also names the deduction it corrects.
+export type EditorTarget = {kind: 'ingredient'; ingredient?: Ingredient} | {kind: 'movement'; ingredient: Ingredient; action: MovementInput['type']; link?: {preparation_id: string; movement_id: string}} | {kind: 'purchase'};
 type Row = {id: string; ingredient: Ingredient; quantity: string; unit: PurchaseUnit; contents: string; contentsUnit: BaseUnit | 'kg' | 'l'; cost: string};
 type Draft = {name: string; baseUnit: BaseUnit; threshold: string; delta: string; reason: string; related: string; purchasedOn: string; supplier: string; note: string; rows: Row[]};
 type Attempt = {id: string; path: string; method: string; body: any};
@@ -32,7 +33,7 @@ function Select({id, label, value, change, options, error, disabled}: {id: strin
 export function InventoryEditor({target, onClose, onSaved}: {target: EditorTarget; onClose: () => void; onSaved: (result: InventoryResult) => void}) {
   const {client, settings, revision} = useInventory();
   const [base, setBase] = useState(target.kind === 'purchase' ? undefined : target.ingredient);
-  const initial = useRef<Draft>({name: base?.name ?? '', baseUnit: base?.base_unit ?? 'g', threshold: base?.low_stock_threshold ?? '', delta: '', reason: '', related: '', purchasedOn: today(settings.timezone), supplier: '', note: '', rows: []});
+  const initial = useRef<Draft>({name: base?.name ?? '', baseUnit: base?.base_unit ?? 'g', threshold: base?.low_stock_threshold ?? '', delta: '', reason: '', related: target.kind === 'movement' && target.action === 'correction' ? target.link?.movement_id ?? '' : '', purchasedOn: today(settings.timezone), supplier: '', note: '', rows: []});
   const [draft, setDraft] = useState(initial.current), [fields, setFields] = useState<Record<string,string>>({}), [error, setError] = useState('');
   const [busy, setBusy] = useState(false), saving = useRef(false), [discard, setDiscard] = useState(false), [conflict, setConflict] = useState<Ingredient | null>(null);
   const [unverifiedConflict, setUnverifiedConflict] = useState<{id: string | null} | null>(null);
@@ -73,7 +74,7 @@ export function InventoryEditor({target, onClose, onSaved}: {target: EditorTarge
         })) throw new Error();
     } else if (target.kind === 'movement') {
       if (!('movement' in result) || result.ingredient.id !== base!.id || result.ingredient.version !== request.body.expected_version + 1 || result.movement.operation_id !== request.id
-        || result.movement.type !== request.body.type || scaledQuantity(result.movement.delta_base_quantity) !== scaledQuantity(request.body.delta_base_quantity)) throw new Error();
+        || result.movement.type !== request.body.type || scaledQuantity(result.movement.delta_base_quantity) !== scaledQuantity(request.body.delta_base_quantity) || result.movement.preparation_id !== request.body.preparation_id) throw new Error();
     } else {
       if ('ingredient' in result || 'purchase' in result || base && result.id !== base.id || result.name !== request.body.name || result.base_unit !== draft.baseUnit
         || result.version !== (request.body.expected_version ?? 0) + 1 || (result.low_stock_threshold === null ? request.body.low_stock_threshold !== null : request.body.low_stock_threshold === null
@@ -137,7 +138,7 @@ export function InventoryEditor({target, onClose, onSaved}: {target: EditorTarge
     if (target.kind === 'movement' && !base!.permitted_actions[target.action].allowed) return;
     const input: PurchaseDraft | MovementInput = target.kind === 'purchase' ? {purchased_on: draft.purchasedOn, supplier: draft.supplier.trim(), note: draft.note, items: draft.rows.map(row => ({client_line_id: row.id, ingredient_id: row.ingredient.id, quantity: row.quantity, unit: row.unit,
       pack_contents: ['bag','bottle','box'].includes(row.unit) ? {quantity: row.contents, unit: row.contentsUnit} : null, total_cost_minor: parsePrice(row.cost, settings.minor_digits)!}))}
-      : {expected_version: base!.version, type: target.action, delta_base_quantity: draft.delta, reason: draft.reason.trim(), preparation_id: null, corrects_movement_id: draft.related || null};
+      : {expected_version: base!.version, type: target.action, delta_base_quantity: draft.delta, reason: draft.reason.trim(), preparation_id: target.link?.preparation_id ?? null, corrects_movement_id: draft.related || null};
     saving.current = true; setBusy(true);
     try {
       const value = await client.request(target.kind === 'purchase' ? '/purchases/preview' : `/ingredients/${encodeURIComponent(base!.id)}/movement-preview`, {method: 'POST', body: target.kind === 'purchase' ? {draft: input} : input, signal: controller.current.signal}); if (!active.current) return;
@@ -153,6 +154,7 @@ export function InventoryEditor({target, onClose, onSaved}: {target: EditorTarge
       onOpenAutoFocus={event => {event.preventDefault(); form.current?.querySelector<HTMLInputElement>('input')?.focus();}} onCloseAutoFocus={event => {event.preventDefault(); if (returnFocus.current?.isConnected) returnFocus.current.focus();}}>
       <div className="editor-heading"><div><Dialog.Title>{discard ? 'Discard changes?' : title}</Dialog.Title>{base && <small>{base.name} / {base.base_unit}</small>}</div><IconButton label="Close editor" disabled={busy} onClick={close}><X size={20} /></IconButton></div>
       {discard ? <><p className="discard-copy">{uncertain ? 'This save is still unresolved. Closing discards these entries; check or retry the save from the page.' : 'Your unsaved changes will be lost.'}</p><div className="editor-actions"><button className="button secondary" onClick={() => setDiscard(false)}>Keep editing</button><button className="button danger" onClick={onClose}>Discard changes</button></div></> : <form ref={form} onSubmit={event => void submit(event)} noValidate aria-busy={busy}>
+        {target.kind === 'movement' && target.link && <p className="estimate-note">This movement will be linked to the preparation record.</p>}
         <fieldset className="order-entry-fields" disabled={locked || Boolean(conflict) || Boolean(unverifiedConflict)} hidden={Boolean(review)}><div className="editor-fields">
           {target.kind === 'ingredient' ? <><Field id="ingredient-name" label="Ingredient name" value={draft.name} maxLength={200} onChange={e => change('name', e.target.value)} error={f('/name')} />
             <Select id="base-unit" label="Base unit" value={draft.baseUnit} disabled={Boolean(base)} change={value => change('baseUnit', value as BaseUnit)} options={[{value: 'g',label: 'Grams (g)'},{value:'ml',label:'Milliliters (ml)'},{value:'piece',label:'Pieces'}]} error={f('/base_unit')} />

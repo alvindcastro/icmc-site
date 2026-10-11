@@ -1,0 +1,14 @@
+import type {PackageContents, PermittedAction, SellingUnit} from '../api/types';
+import type {BaseUnit} from '../inventory/types';
+import type {OrderStatus} from '../orders/types';
+export type PlanningOrderLine = {order_id: string; order_version: number; reference: string; order_item_id: string; status: OrderStatus;
+  ordered_quantity: number; prepared_quantity: number; remaining_quantity: number};
+export type PlanningFood = {variant_id: string; food_name: string; variant_label: string; selling_unit: SellingUnit; package_contents: PackageContents | null;
+  ordered_quantity: number; prepared_quantity: number; remaining_quantity: number; orders: PlanningOrderLine[]};
+export type PlanningIngredient = {ingredient_id: string; ingredient_name: string; base_unit: BaseUnit; stock_on_hand: string; earlier_demand: string; period_demand: string;
+  stock_after_earlier: string; earlier_shortage: string; period_shortage: string; cumulative_shortage: string};
+export type PlanningMissing = {code: 'recipe_missing'; variant_id: string; food_id: string; food_name: string; variant_label: string; orders: {order_id: string; reference: string}[]};
+export type Planning = {id: string; calculated_at: string; timezone: string; period: {date_from: string; date_to: string}; complete: boolean; missing: PlanningMissing[];
+  foods: PlanningFood[]; ingredients: PlanningIngredient[]; permitted_actions: {record_preparation: PermittedAction}};
+export type ShoppingItem = Pick<PlanningIngredient, 'ingredient_id' | 'ingredient_name' | 'base_unit' | 'stock_on_hand' | 'earlier_demand' | 'period_demand' | 'cumulative_shortage'>;
+export type ShoppingList = Pick<Planning, 'id' | 'calculated_at' | 'timezone' | 'period' | 'complete' | 'missing'> & {items: ShoppingItem[]};

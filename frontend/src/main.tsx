@@ -11,7 +11,7 @@ async function start() {
   let transport: FetchTransport = fetch;
   if (import.meta.env.DEV && config.mode === 'fixtures') {
     const { createFixtureTransport } = await import('./api/fixtures');
-    transport = createFixtureTransport({samples: true}).fetch;
+    transport = createFixtureTransport({samples: true, preparation: true}).fetch;
   }
   const client = createApiClient({ baseUrl: config.baseUrl, transport });
   const router = createBrowserRouter([{path: '*', element: <App client={client} mode={config.mode} />}]);

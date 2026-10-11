@@ -27,13 +27,15 @@ function permitted(status: string, order?: Order, payments = false): Order['perm
     mark_ready: prepared ? 'Mark ready after preparation starts.' : 'Record all remaining preparation before marking ready.',
     complete: prepared ? 'Complete a ready order.' : 'Record all remaining preparation before completion.',
     record_payment: !payments ? 'Payments are not enabled.' : status === 'cancelled' ? 'Cancelled orders cannot accept payments.' : 'No balance is due.',
-    refund: !payments ? 'Payments are not enabled.' : 'No refundable funds remain.'};
+    refund: !payments ? 'Payments are not enabled.' : 'No refundable funds remain.',
+    record_preparation: order?.preparation_tracking !== 'recorded' ? 'Preparation recording is not enabled.' : prepared ? 'Nothing remains to prepare.' : 'Only confirmed, preparing or ready orders can be prepared.'};
   return Object.fromEntries(actions.map(action => {
     const allowed = action === 'edit' && ['pending', 'confirmed'].includes(status) || action === 'confirm' && status === 'pending'
       || action === 'start_preparing' && status === 'confirmed' || action === 'mark_ready' && status === 'preparing' && prepared || action === 'complete' && status === 'ready' && prepared
       || action === 'cancel' && ['pending', 'confirmed', 'preparing', 'ready'].includes(status)
       || action === 'record_payment' && payments && status !== 'cancelled' && (order?.balance_due_minor ?? 0) > 0
-      || action === 'refund' && payments && (order?.net_paid_minor ?? 0) > 0;
+      || action === 'refund' && payments && (order?.net_paid_minor ?? 0) > 0
+      || action === 'record_preparation' && order?.preparation_tracking === 'recorded' && ['confirmed', 'preparing', 'ready'].includes(status) && !prepared;
     return [action, {allowed, reason_code: allowed ? null : 'not_available', reason: allowed ? null : reasons[action] ?? 'This action is not available for this order.'}];
   })) as Order['permitted_actions'];
 }
@@ -111,6 +113,7 @@ export function createOrderFixtures({menu, settings, usedVariants, operations}: 
     const lines: QuoteLine[] = [];
     const dependencies: unknown[] = [];
     const clientIds = new Set<string>(); const savedIds = new Set<string>();
+    const recorded = order ? order.preparation_tracking === 'recorded' : settings.capabilities.preparation_recording;
     for (const [index, item] of draft.items.entries()) {
       knownFields(item, ['client_line_id', 'order_item_id', 'variant_id', 'quantity', 'preparation_notes'], `/draft/items/${index}`);
       const field = (name: string, message: string) => invalid(`items/${index}/${name}`, message);
@@ -124,13 +127,15 @@ export function createOrderFixtures({menu, settings, usedVariants, operations}: 
       if (item.order_item_id && (!saved || saved.variant_id !== item.variant_id || savedIds.has(item.order_item_id))) {field('variant_id', 'Saved item identity cannot be replaced; remove it and add a new line.'); continue;}
       if (item.order_item_id) savedIds.add(item.order_item_id);
       if (!food || !variant || ((!food.available || !variant.available) && (!saved || item.quantity > saved.quantity))) {field('variant_id', 'This variant is unavailable for new or increased quantities.'); continue;}
+      if (saved && item.quantity < (saved.prepared_quantity ?? 0)) {field('quantity', `Quantity cannot go below the ${saved.prepared_quantity} already prepared.`); continue;}
       if ((!saved || item.quantity > saved.quantity) && settings.environment === 'live' && (food.confirmation_status !== 'confirmed' || variant.confirmation_status !== 'confirmed')) throw new ApiError(409, 'menu_unconfirmed', 'This menu item requires confirmation.');
       const snapshot = saved ?? {variant_id: variant.id, food_name: food.name, variant_label: variant.label, selling_unit: variant.selling_unit,
-        package_contents: clone(variant.package_contents), unit_price_minor: variant.price_minor, prepared_quantity: null, remaining_quantity: null};
+        package_contents: clone(variant.package_contents), unit_price_minor: variant.price_minor, prepared_quantity: recorded ? 0 : null, remaining_quantity: null};
       if (!saved || item.quantity > saved.quantity) dependencies.push({food_id: food.id, food_version: food.version, variant_id: variant.id, variant_version: variant.version});
-      lines.push({...snapshot, client_line_id: item.client_line_id, order_item_id: saved?.id ?? null, quantity: item.quantity,
+      lines.push({...snapshot, remaining_quantity: snapshot.prepared_quantity === null ? null : item.quantity - snapshot.prepared_quantity, client_line_id: item.client_line_id, order_item_id: saved?.id ?? null, quantity: item.quantity,
         preparation_notes: item.preparation_notes ?? '', line_total_minor: safeAmount(BigInt(snapshot.unit_price_minor) * BigInt(item.quantity), `/draft/items/${index}/quantity`)});
     }
+    if (order?.items.some(saved => (saved.prepared_quantity ?? 0) > 0 && !savedIds.has(saved.id))) invalid('items', 'Prepared items cannot be removed.');
     if (fields.length) throw new ApiError(422, 'validation_failed', 'Check the highlighted fields.', fields);
     const subtotal = safeAmount(lines.reduce((total, item) => total + BigInt(item.line_total_minor), 0n), '/draft/items');
     const charge = fulfillment.method === 'pickup' ? 0 : settings.delivery_policy.mode === 'fixed_amount' ? settings.delivery_policy.fixed_charge_minor! : draft.delivery_charge_minor;
@@ -155,9 +160,22 @@ export function createOrderFixtures({menu, settings, usedVariants, operations}: 
     order.balance_due_minor = Math.max(0, order.settlement_total_minor - order.net_paid_minor); order.customer_credit_minor = Math.max(0, order.net_paid_minor - order.settlement_total_minor);
     order.payment_status = order.customer_credit_minor > 0 ? 'credit_due' : order.balance_due_minor > 0 ? order.net_paid_minor > 0 ? 'partial' : 'unpaid' : 'paid';
     for (const entry of order.ledger) if (entry.type === 'payment') entry.refundable_minor = entry.amount_minor - order.ledger.filter(refund => refund.payment_id === entry.id).reduce((sum, refund) => sum + refund.amount_minor, 0);
+    // Stock used for prepared food is never returned by cancelling, so cancellation must acknowledge it.
+    order.cancellation_requires_stock_acknowledgment = order.items.some(item => (item.prepared_quantity ?? 0) > 0);
     order.permitted_actions = permitted(order.status, order, settings.capabilities.payments);
   }
-  return async (url: URL, init?: RequestInit): Promise<Response | null> => {
+  // Applied by the preparation fixture after it has validated every allocation; each order advances one version.
+  function allocate(changes: {order_id: string; order_item_id: string; quantity: number}[]): Order[] {
+    const changed: Order[] = [];
+    for (const change of changes) {
+      const order = orders.find(value => value.id === change.order_id)!, item = order.items.find(value => value.id === change.order_item_id)!;
+      item.prepared_quantity = (item.prepared_quantity ?? 0) + change.quantity; item.remaining_quantity = item.quantity - item.prepared_quantity;
+      if (!changed.includes(order)) changed.push(order);
+    }
+    for (const order of changed) {order.version++; order.updated_at = new Date().toISOString(); settle(order);}
+    return changed.map(clone);
+  }
+  const handler = async (url: URL, init?: RequestInit): Promise<Response | null> => {
     const path = url.pathname.replace('/api/v1', ''); const method = init?.method ?? 'GET';
     if (!/^\/(orders|dashboard)(\/|$)/.test(path)) return null;
     try {
@@ -266,7 +284,7 @@ export function createOrderFixtures({menu, settings, usedVariants, operations}: 
           const {id: _id, expires_at: _expires, order_id: _order, expected_version: _version, settings_version: _settings, lines: _lines, credit_acknowledgment_required: _credit, ...totals} = quote;
           result = order ?? {...totals, id: `fixture_order_${crypto.randomUUID()}`, reference: `DEV-${String(orders.length + 1).padStart(4, '0')}`,
             version: 0, status: body.initial_status as Order['status'], status_history: [history(null, 'pending')], ledger: [], created_at: now,
-            payments_minor: 0, refunds_minor: 0, payment_status: 'unpaid', preparation_tracking: 'manual', cancellation_requires_stock_acknowledgment: false, customer: clone(draft.customer),
+            payments_minor: 0, refunds_minor: 0, payment_status: 'unpaid', preparation_tracking: settings.capabilities.preparation_recording ? 'recorded' : 'manual', cancellation_requires_stock_acknowledgment: false, customer: clone(draft.customer),
             notes: draft.notes ?? '', items, updated_at: now, permitted_actions: permitted(body.initial_status as string)};
           if (!order && result.status === 'confirmed') result.status_history.push(history('pending', 'confirmed'));
           Object.assign(result, totals, {customer: {name: draft.customer.name.trim(), phone: draft.customer.phone.trim(), notes: draft.customer.notes ?? ''}, notes: draft.notes ?? '', items, version: result.version + 1,
@@ -285,4 +303,5 @@ export function createOrderFixtures({menu, settings, usedVariants, operations}: 
       return json(snapshot, status);
     } catch (failure) {const error = failure as ApiError; return json(envelope(error), error.status);}
   };
+  return Object.assign(handler, {allocate});
 }
